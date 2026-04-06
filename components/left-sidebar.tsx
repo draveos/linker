@@ -1,9 +1,10 @@
 "use client"
 
-import { Sparkles, Clock, BookOpen, BrainCircuit } from "lucide-react"
+import { Sparkles, Clock, BookOpen, BrainCircuit, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 import type { Analysis } from "@/app/page"
 
 interface LeftSidebarProps {
@@ -12,6 +13,7 @@ interface LeftSidebarProps {
   isAnalyzing: boolean
   onAnalyze: () => void
   recentAnalyses: Analysis[]
+  onSelectAnalysis: (analysis: Analysis) => void
 }
 
 export function LeftSidebar({
@@ -20,6 +22,7 @@ export function LeftSidebar({
   isAnalyzing,
   onAnalyze,
   recentAnalyses,
+  onSelectAnalysis,
 }: LeftSidebarProps) {
   const formatTime = (date: Date) => {
     const now = new Date()
@@ -34,16 +37,16 @@ export function LeftSidebar({
   }
 
   return (
-    <aside className="w-80 border-r border-border bg-card flex flex-col h-full shrink-0">
+    <aside className="w-80 border-r border-border bg-card flex flex-col h-full shrink-0 max-md:hidden">
       {/* Header */}
       <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-xl">
-            <BrainCircuit className="h-6 w-6 text-primary" />
+          <div className="p-2.5 bg-primary rounded-xl shadow-lg shadow-primary/25">
+            <BrainCircuit className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Linker</h1>
-            <p className="text-xs text-muted-foreground">AI Knowledge Graph</p>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Linker</h1>
+            <p className="text-xs text-muted-foreground font-medium">AI-based Root Cause Learning</p>
           </div>
         </div>
       </div>
@@ -52,9 +55,9 @@ export function LeftSidebar({
       <div className="p-6 flex-1 overflow-auto">
         <div className="space-y-4">
           <div>
-            <h2 className="text-sm font-medium text-foreground mb-1">Diagnostic Input</h2>
-            <p className="text-xs text-muted-foreground">
-              Enter your incorrect answer or problem to analyze
+            <h2 className="text-sm font-semibold text-foreground mb-1">Diagnostic Input</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Enter your incorrect solution, wrong reasoning, or problem statement
             </p>
           </div>
 
@@ -62,49 +65,61 @@ export function LeftSidebar({
             placeholder="Paste your math problem, solution, or reasoning here...
 
 Example: I tried to find the inverse of matrix A = [[1,2],[3,4]] and got [[4,-2],[-3,1]] but my answer was marked wrong..."
-            className="min-h-[180px] resize-none text-sm bg-background border-border focus:ring-primary"
+            className="min-h-[160px] resize-none text-sm bg-background border-border focus:ring-primary placeholder:text-muted-foreground/60"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
           />
 
           <Button
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20"
+            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium"
             onClick={onAnalyze}
             disabled={isAnalyzing || !inputText.trim()}
           >
             {isAnalyzing ? (
               <>
                 <Spinner className="h-4 w-4 mr-2" />
-                Analyzing...
+                <span>Analyzing...</span>
               </>
             ) : (
               <>
                 <Sparkles className="h-4 w-4 mr-2" />
-                Analyze Root Cause
+                <span>Analyze Root Cause</span>
               </>
             )}
           </Button>
+
+          {/* Helper Text */}
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/50 border border-border">
+            <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              This demo traces your errors to identify the missing foundational concept in your knowledge graph.
+            </p>
+          </div>
         </div>
 
         {/* Recent Analyses */}
         <div className="mt-8">
           <div className="flex items-center gap-2 mb-4">
             <Clock className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium text-muted-foreground">Recent Analyses</h3>
+            <h3 className="text-sm font-semibold text-foreground">Recent Analyses</h3>
           </div>
 
           <div className="space-y-2">
             {recentAnalyses.map((analysis) => (
               <button
                 key={analysis.id}
-                className="w-full text-left p-3 rounded-xl bg-secondary/50 hover:bg-secondary transition-colors group"
+                onClick={() => onSelectAnalysis(analysis)}
+                className={cn(
+                  "w-full text-left p-3 rounded-xl border transition-all duration-200 group",
+                  "bg-card border-border hover:border-primary/30 hover:bg-primary/5 hover:shadow-md"
+                )}
               >
                 <div className="flex items-start gap-3">
                   <div className="p-1.5 bg-primary/10 rounded-lg shrink-0 group-hover:bg-primary/20 transition-colors">
                     <BookOpen className="h-3.5 w-3.5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
+                    <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
                       {analysis.title}
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -119,9 +134,9 @@ Example: I tried to find the inverse of matrix A = [[1,2],[3,4]] and got [[4,-2]
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border">
+      <div className="p-4 border-t border-border bg-muted/30">
         <p className="text-xs text-center text-muted-foreground">
-          Powered by AI Knowledge Graph
+          Powered by AI Knowledge Graph Technology
         </p>
       </div>
     </aside>
