@@ -14,6 +14,7 @@ interface KnowledgeGraphCanvasProps {
   analysisStep?: number
   editMode?: boolean
   filterType?: "all" | "mastered" | "concept" | "root-cause"
+  setFilterType?: (type: "all" | "mastered" | "concept" | "root-cause") => void
   onNodePositionChange?: (positions: NodePosition[]) => void
   onOpenQuiz?: () => void
 }
@@ -65,16 +66,17 @@ const analysisSteps = [
   "Root cause identified",
 ]
 
-export function KnowledgeGraphCanvas({ 
-  onNodeClick, 
-  selectedNodeId, 
+export function KnowledgeGraphCanvas({
+  onNodeClick,
+  selectedNodeId,
   activeRootCauseId,
   isAnalyzing,
   analysisStep,
   editMode,
-  filterType,
+  filterType = "all",
+  setFilterType,
   onNodePositionChange,
-  onOpenQuiz
+  onOpenQuiz,
 }: KnowledgeGraphCanvasProps) {
   const [zoom, setZoom] = useState(1)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)

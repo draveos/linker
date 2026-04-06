@@ -196,6 +196,7 @@ export default function DashboardPage() {
           analysisStep={analysisStep}
           editMode={editMode}
           filterType={filterType}
+          setFilterType={setFilterType}
           onNodePositionChange={handleNodePositionChange}
           onOpenQuiz={() => setShowQuiz(true)}
         />
