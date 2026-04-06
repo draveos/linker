@@ -1,5 +1,6 @@
 "use client"
 
+// Remedy Panel Component
 import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"

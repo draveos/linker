@@ -1,5 +1,6 @@
 "use client"
 
+// Progress Dashboard Component
 import { useState, useEffect } from "react"
 import { createPortal } from "react-dom"
 import { X, TrendingUp, BookOpen, CheckCircle2, Clock } from "lucide-react"

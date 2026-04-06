@@ -1,5 +1,6 @@
 "use client"
 
+// Quiz Modal Component
 import { useState, useEffect } from "react"
 import { createPortal } from "react-dom"
 import { X, CheckCircle, XCircle, ArrowRight } from "lucide-react"
