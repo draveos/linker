@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
@@ -237,7 +238,7 @@ export function MobileGraph({
                   </div>
                   <div className="flex-1">
                     <SheetTitle className="text-left">{selectedNode.label}</SheetTitle>
-                    <p className="text-xs text-muted-foreground">{selectedNode.description}</p>
+                    <SheetDescription className="text-xs text-muted-foreground">{selectedNode.description}</SheetDescription>
                   </div>
                 </div>
               </SheetHeader>

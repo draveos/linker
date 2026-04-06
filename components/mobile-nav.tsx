@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
@@ -72,6 +73,9 @@ export function MobileNav({
                 </div>
                 <span>Error Analyzer</span>
               </SheetTitle>
+              <SheetDescription className="sr-only">
+                Analyze your learning errors and trace them to root causes
+              </SheetDescription>
             </SheetHeader>
 
             <div className="p-6 overflow-auto max-h-[calc(100vh-100px)]">
