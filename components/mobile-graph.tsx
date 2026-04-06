@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { ZoomIn, ZoomOut, Maximize2, Check, AlertTriangle, Circle, X, Lightbulb, Play, ArrowRight, BookOpen, GraduationCap, Settings, Plus, Minus, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
