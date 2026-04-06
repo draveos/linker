@@ -114,6 +114,8 @@ export function MobileGraph({
   const [zoom, setZoom] = useState(1)
   const [baseNodes, setBaseNodes] = useState(initialNodes)
   const [showFilters, setShowFilters] = useState(false)
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; nodeX: number; nodeY: number } | null>(null)
 
   const nodes = useMemo(() => {
     return baseNodes.map((node) => ({
@@ -155,6 +157,40 @@ export function MobileGraph({
     ])
   }
 
+  const handleTouchStart = (e: React.TouchEvent, nodeId: string) => {
+    if (!editMode) return
+    const touch = e.touches[0]
+    const node = baseNodes.find(n => n.id === nodeId)
+    if (node) {
+      setDraggedNodeId(nodeId)
+      setDragStart({ x: touch.clientX, y: touch.clientY, nodeX: node.x, nodeY: node.y })
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!draggedNodeId || !dragStart || !editMode) return
+    const touch = e.touches[0]
+    const container = e.currentTarget.getBoundingClientRect()
+    
+    const deltaX = ((touch.clientX - dragStart.x) / container.width) * 100
+    const deltaY = ((touch.clientY - dragStart.y) / container.height) * 100
+    
+    setBaseNodes(prev => prev.map(node => 
+      node.id === draggedNodeId 
+        ? { 
+            ...node, 
+            x: Math.max(5, Math.min(95, dragStart.nodeX + deltaX)),
+            y: Math.max(5, Math.min(85, dragStart.nodeY + deltaY))
+          }
+        : node
+    ))
+  }
+
+  const handleTouchEnd = () => {
+    setDraggedNodeId(null)
+    setDragStart(null)
+  }
+
   return (
     <main className="flex-1 relative bg-muted/30 overflow-hidden md:hidden">
       {/* Dotted Grid Background */}
@@ -183,6 +219,8 @@ export function MobileGraph({
       <div
         className="absolute inset-0 transition-transform duration-300"
         style={{ transform: `scale(${zoom})` }}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <div className="relative w-full h-full">
           {/* SVG Connections */}
@@ -213,18 +251,26 @@ export function MobileGraph({
           {nodes.map((node) => (
             <div key={node.id} className="relative">
               <button
-                onClick={() => onNodeClick({
-                  id: node.id,
-                  label: node.label,
-                  type: node.type,
-                  description: node.description,
-                })}
+                onTouchStart={(e) => handleTouchStart(e, node.id)}
+                onClick={() => {
+                  // Only trigger click if not in edit mode
+                  if (!editMode) {
+                    onNodeClick({
+                      id: node.id,
+                      label: node.label,
+                      type: node.type,
+                      description: node.description,
+                    })
+                  }
+                }}
                 className={cn(
                   "absolute transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 whitespace-nowrap",
                   node.type === "standard" && "bg-card border border-border text-foreground shadow-sm",
                   node.type === "mastered" && "bg-primary text-primary-foreground shadow-md shadow-primary/20",
                   node.type === "missing" && "bg-destructive/15 border border-destructive text-destructive animate-pulse shadow-md",
-                  selectedNodeId === node.id && "ring-2 ring-ring ring-offset-1"
+                  selectedNodeId === node.id && !editMode && "ring-2 ring-ring ring-offset-1",
+                  editMode && "ring-2 ring-dashed ring-muted-foreground/30",
+                  draggedNodeId === node.id && "scale-110 shadow-lg z-20"
                 )}
                 style={{ 
                   left: `${node.x}%`, 
@@ -245,13 +291,13 @@ export function MobileGraph({
                     e.stopPropagation()
                     handleDeleteNode(node.id)
                   }}
-                  className="absolute w-5 h-5 bg-destructive rounded-full flex items-center justify-center shadow-md"
+                  className="absolute w-5 h-5 bg-destructive hover:bg-destructive/80 rounded-full flex items-center justify-center shadow-md z-10"
                   style={{
                     left: `calc(${node.x}% + 20px)`,
                     top: `calc(${node.y}% - 12px)`,
                   }}
                 >
-                  <Minus className="h-3 w-3 text-destructive-foreground" />
+                  <Minus className="h-3 w-3 text-white" />
                 </button>
               )}
             </div>
@@ -279,12 +325,15 @@ export function MobileGraph({
             <Filter className="h-4 w-4" />
           </Button>
           <Button
-            variant={editMode ? "default" : "outline"}
+            variant="outline"
             size="icon"
-            className="h-10 w-10 rounded-xl bg-card/80 backdrop-blur-sm"
+            className={cn(
+              "h-10 w-10 rounded-xl bg-card/80 backdrop-blur-sm",
+              editMode && "bg-primary/10 border-primary/50"
+            )}
             onClick={() => setEditMode?.(!editMode)}
           >
-            <Settings className="h-4 w-4" />
+            <Settings className={cn("h-4 w-4", editMode ? "text-primary" : "text-foreground")} />
           </Button>
         </div>
       </div>

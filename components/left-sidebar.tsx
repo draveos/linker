@@ -152,9 +152,11 @@ Example: I tried to find the inverse of matrix A = [[1,2],[3,4]] and got [[4,-2]
             variant="outline"
             size="sm"
             onClick={() => setEditMode?.(!editMode)}
-            className={cn(editMode && "bg-primary/10 border-primary/50")}
+            className={cn(
+              editMode && "bg-primary/10 border-primary/50 text-primary"
+            )}
           >
-            <Settings className="h-4 w-4 mr-2" />
+            <Settings className={cn("h-4 w-4 mr-2", editMode && "text-primary")} />
             {editMode ? "Done Editing" : "Edit Graph"}
           </Button>
           <Button

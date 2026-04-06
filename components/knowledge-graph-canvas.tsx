@@ -293,42 +293,45 @@ export function KnowledgeGraphCanvas({
               <div key={node.id} className="relative">
                 <button
                   onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  onClick={() =>
-                    onNodeClick({
-                      id: node.id,
-                      label: node.label,
-                      type: node.type,
-                      description: node.description,
-                    })
-                  }
+                  onClick={() => {
+                    // Only open popup if not in edit mode
+                    if (!editMode) {
+                      onNodeClick({
+                        id: node.id,
+                        label: node.label,
+                        type: node.type,
+                        description: node.description,
+                      })
+                    }
+                  }}
                   onMouseEnter={() => setHoveredNodeId(node.id)}
                   onMouseLeave={() => setHoveredNodeId(null)}
                   className={cn(
-                    "absolute transform -translate-x-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2 whitespace-nowrap cursor-pointer",
-                    editMode && draggedNodeId === node.id && "cursor-grabbing",
-                    editMode && !draggedNodeId && "cursor-grab",
+                    "absolute transform -translate-x-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2 whitespace-nowrap",
+                    editMode ? (draggedNodeId === node.id ? "cursor-grabbing" : "cursor-grab") : "cursor-pointer",
                     // Standard node
                     node.type === "standard" && [
                       "bg-card border-2 border-border text-foreground shadow-md",
-                      "hover:border-primary/50 hover:shadow-lg hover:scale-105",
-                      isHovered && "border-primary/50 shadow-lg scale-105",
+                      !editMode && "hover:border-primary/50 hover:shadow-lg hover:scale-105",
+                      isHovered && !editMode && "border-primary/50 shadow-lg scale-105",
                     ],
                     // Mastered node
                     node.type === "mastered" && [
                       "bg-primary text-primary-foreground border-2 border-primary shadow-lg shadow-primary/20",
-                      "hover:brightness-110 hover:scale-105 hover:shadow-xl hover:shadow-primary/30",
-                      isHovered && "brightness-110 scale-105 shadow-xl shadow-primary/30",
+                      !editMode && "hover:brightness-110 hover:scale-105 hover:shadow-xl hover:shadow-primary/30",
+                      isHovered && !editMode && "brightness-110 scale-105 shadow-xl shadow-primary/30",
                     ],
                     // Missing/Root Cause node
                     node.type === "missing" && [
                       "bg-destructive/15 border-2 border-destructive text-destructive shadow-lg shadow-destructive/30",
-                      "animate-pulse hover:bg-destructive/25 hover:scale-110",
-                      isHovered && "bg-destructive/25 scale-110",
+                      "animate-pulse",
+                      !editMode && "hover:bg-destructive/25 hover:scale-110",
+                      isHovered && !editMode && "bg-destructive/25 scale-110",
                     ],
-                    // Selected state
-                    isSelected && "ring-2 ring-ring ring-offset-2 ring-offset-background scale-105",
-                    // Filter opacity
-                    `opacity-${Math.round(nodeOpacity * 100)}`
+                    // Selected state (only when not editing)
+                    isSelected && !editMode && "ring-2 ring-ring ring-offset-2 ring-offset-background scale-105",
+                    // Edit mode indicator
+                    editMode && "ring-2 ring-dashed ring-muted-foreground/30"
                   )}
                   style={{
                     left: `${node.x}%`,
@@ -345,15 +348,17 @@ export function KnowledgeGraphCanvas({
                 {/* Edit Mode Delete Button */}
                 {editMode && (
                   <button
-                    onClick={() => handleDeleteNode(node.id)}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-destructive rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeleteNode(node.id)
+                    }}
+                    className="absolute w-6 h-6 bg-destructive hover:bg-destructive/80 rounded-full flex items-center justify-center shadow-md transition-colors z-10"
                     style={{
-                      left: `${node.x}%`,
-                      top: `${node.y}%`,
-                      transform: "translate(50%, -50%)",
+                      left: `calc(${node.x}% + 30px)`,
+                      top: `calc(${node.y}% - 15px)`,
                     }}
                   >
-                    <Minus className="h-3 w-3 text-destructive-foreground" />
+                    <Minus className="h-3 w-3 text-white" />
                   </button>
                 )}
               </div>
@@ -410,6 +415,20 @@ export function KnowledgeGraphCanvas({
 
       {/* Floating Toolbar */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/95 backdrop-blur-sm border border-border rounded-2xl p-2 shadow-xl pointer-events-auto">
+        {editMode && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-xl hover:bg-primary/10 text-primary"
+              onClick={handleAddNode}
+              title="Add Node"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <div className="w-px h-6 bg-border mx-1" />
+          </>
+        )}
         <Button
           variant="ghost"
           size="icon"
