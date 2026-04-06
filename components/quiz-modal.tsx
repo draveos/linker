@@ -86,10 +86,13 @@ export function QuizModal({ isOpen, onClose, selectedNode }: QuizModalProps) {
   const quizData = quizzes[selectedNode.id]
   if (!quizData) {
     return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full mx-4">
+      <div 
+        className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">Quiz Not Available</h2>
+            <h2 className="text-xl font-bold text-foreground">Quiz Not Available</h2>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-5 w-5" />
             </Button>
@@ -132,8 +135,11 @@ export function QuizModal({ isOpen, onClose, selectedNode }: QuizModalProps) {
   if (showResults) {
     const percentage = Math.round((score / quizData.questions.length) * 100)
     return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full mx-4 space-y-6">
+      <div 
+        className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div className="bg-card border border-border rounded-2xl p-8 max-w-md w-full mx-4 space-y-6 shadow-2xl">
           <div className="text-center">
             <div className={cn(
               "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl font-bold",
@@ -186,8 +192,11 @@ export function QuizModal({ isOpen, onClose, selectedNode }: QuizModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-      <div className="bg-card border border-border rounded-2xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="bg-card border border-border rounded-2xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>

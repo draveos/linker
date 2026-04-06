@@ -218,7 +218,10 @@ export function MobileGraph({
       {/* Canvas */}
       <div
         className="absolute inset-0 transition-transform duration-300"
-        style={{ transform: `scale(${zoom})` }}
+        style={{ 
+          transform: `scale(${zoom})`,
+          touchAction: editMode ? "none" : "auto"
+        }}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
@@ -253,8 +256,8 @@ export function MobileGraph({
               <button
                 onTouchStart={(e) => handleTouchStart(e, node.id)}
                 onClick={() => {
-                  // Only trigger click if not in edit mode
-                  if (!editMode) {
+                  // Only trigger click if not in edit mode and not dragging
+                  if (!editMode && !draggedNodeId) {
                     onNodeClick({
                       id: node.id,
                       label: node.label,
@@ -264,18 +267,19 @@ export function MobileGraph({
                   }
                 }}
                 className={cn(
-                  "absolute transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 whitespace-nowrap",
+                  "absolute transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 whitespace-nowrap select-none",
                   node.type === "standard" && "bg-card border border-border text-foreground shadow-sm",
                   node.type === "mastered" && "bg-primary text-primary-foreground shadow-md shadow-primary/20",
                   node.type === "missing" && "bg-destructive/15 border border-destructive text-destructive animate-pulse shadow-md",
                   selectedNodeId === node.id && !editMode && "ring-2 ring-ring ring-offset-1",
-                  editMode && "ring-2 ring-dashed ring-muted-foreground/30",
+                  editMode && "ring-2 ring-dashed ring-muted-foreground/30 cursor-grab active:cursor-grabbing",
                   draggedNodeId === node.id && "scale-110 shadow-lg z-20"
                 )}
                 style={{ 
                   left: `${node.x}%`, 
                   top: `${node.y}%`,
                   opacity: getNodeOpacity(node),
+                  touchAction: editMode ? "none" : "auto",
                 }}
               >
                 {node.type === "mastered" && <Check className="h-3 w-3" />}
