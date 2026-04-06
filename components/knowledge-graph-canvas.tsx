@@ -30,23 +30,26 @@ interface GraphNode {
 }
 
 const baseNodes: Omit<GraphNode, "type">[] = [
-  { id: "1", label: "Vectors", category: "linear-algebra", x: 15, y: 18, description: "Vector operations and properties" },
-  { id: "2", label: "Matrix Operations", category: "linear-algebra", x: 30, y: 18, description: "Basic matrix arithmetic" },
-  { id: "3", label: "Matrix Multiplication", category: "linear-algebra", x: 18, y: 35, description: "Row-column multiplication" },
-  { id: "4", label: "Determinants", category: "linear-algebra", x: 35, y: 35, description: "Calculating matrix determinants" },
-  { id: "5", label: "Matrix Inverse", category: "linear-algebra", x: 15, y: 52, description: "Finding inverse matrices" },
-  { id: "6", label: "Cofactor Expansion", category: "linear-algebra", x: 38, y: 52, description: "Cofactor method for determinants" },
-  { id: "7", label: "Linear Systems", category: "linear-algebra", x: 25, y: 68, description: "Solving systems of equations" },
-  { id: "8", label: "Limits", category: "calculus", x: 55, y: 15, description: "Understanding limits and continuity" },
-  { id: "9", label: "Derivatives", category: "calculus", x: 68, y: 15, description: "Rate of change and slopes" },
-  { id: "10", label: "Chain Rule", category: "calculus", x: 62, y: 32, description: "Derivative of composite functions" },
-  { id: "11", label: "Integration", category: "calculus", x: 75, y: 32, description: "Finding antiderivatives" },
-  { id: "12", label: "Partial Derivatives", category: "calculus", x: 58, y: 50, description: "Multivariable calculus" },
-  { id: "13", label: "Arrays", category: "data-structures", x: 80, y: 50, description: "Linear data storage" },
-  { id: "14", label: "Recursion", category: "data-structures", x: 72, y: 65, description: "Self-referential algorithms" },
-  { id: "15", label: "Trees", category: "data-structures", x: 85, y: 65, description: "Hierarchical data structures" },
-  { id: "16", label: "Tree Traversal", category: "data-structures", x: 78, y: 82, description: "Visiting tree nodes systematically" },
-  { id: "17", label: "Binary Search", category: "data-structures", x: 60, y: 80, description: "Divide and conquer search" },
+  // Linear Algebra - left section (x: 8-35%)
+  { id: "1", label: "Vectors", category: "linear-algebra", x: 12, y: 15, description: "Vector operations and properties" },
+  { id: "2", label: "Matrix Operations", category: "linear-algebra", x: 30, y: 15, description: "Basic matrix arithmetic" },
+  { id: "3", label: "Matrix Multiplication", category: "linear-algebra", x: 12, y: 32, description: "Row-column multiplication" },
+  { id: "4", label: "Determinants", category: "linear-algebra", x: 30, y: 32, description: "Calculating matrix determinants" },
+  { id: "5", label: "Matrix Inverse", category: "linear-algebra", x: 12, y: 50, description: "Finding inverse matrices" },
+  { id: "6", label: "Cofactor Expansion", category: "linear-algebra", x: 30, y: 50, description: "Cofactor method for determinants" },
+  { id: "7", label: "Linear Systems", category: "linear-algebra", x: 21, y: 68, description: "Solving systems of equations" },
+  // Calculus - center section (x: 42-62%)
+  { id: "8", label: "Limits", category: "calculus", x: 48, y: 15, description: "Understanding limits and continuity" },
+  { id: "9", label: "Derivatives", category: "calculus", x: 62, y: 15, description: "Rate of change and slopes" },
+  { id: "10", label: "Chain Rule", category: "calculus", x: 48, y: 35, description: "Derivative of composite functions" },
+  { id: "11", label: "Integration", category: "calculus", x: 62, y: 35, description: "Finding antiderivatives" },
+  { id: "12", label: "Partial Derivatives", category: "calculus", x: 55, y: 55, description: "Multivariable calculus" },
+  // Data Structures - right section (x: 72-90%)
+  { id: "13", label: "Arrays", category: "data-structures", x: 78, y: 15, description: "Linear data storage" },
+  { id: "14", label: "Recursion", category: "data-structures", x: 78, y: 35, description: "Self-referential algorithms" },
+  { id: "15", label: "Trees", category: "data-structures", x: 88, y: 35, description: "Hierarchical data structures" },
+  { id: "16", label: "Tree Traversal", category: "data-structures", x: 88, y: 55, description: "Visiting tree nodes systematically" },
+  { id: "17", label: "Binary Search", category: "data-structures", x: 78, y: 55, description: "Divide and conquer search" },
 ]
 
 const connections: [string, string][] = [
@@ -373,22 +376,31 @@ export function KnowledgeGraphCanvas({
       <div className="absolute top-6 right-6 pointer-events-none">
         <div className="flex flex-col gap-2 pointer-events-auto">
           <button
-            onClick={() => filterType === "all" ? null : setFilterType}
-            className="flex items-center gap-2 text-xs text-muted-foreground bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border border-border shadow-sm hover:border-primary/50 transition-colors cursor-pointer"
+            onClick={() => setFilterType?.(filterType === "mastered" ? "all" : "mastered")}
+            className={cn(
+              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
+              filterType === "mastered" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground hover:border-primary/50"
+            )}
           >
             <span className="w-2.5 h-2.5 rounded-full bg-primary shadow-sm shadow-primary/50" />
             Mastered
           </button>
           <button
-            onClick={() => filterType === "concept" ? setFilterType("all") : setFilterType("concept")}
-            className="flex items-center gap-2 text-xs text-muted-foreground bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border border-border shadow-sm hover:border-primary/50 transition-colors cursor-pointer"
+            onClick={() => setFilterType?.(filterType === "concept" ? "all" : "concept")}
+            className={cn(
+              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
+              filterType === "concept" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground hover:border-primary/50"
+            )}
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-border" />
+            <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground/50" />
             Concept
           </button>
           <button
-            onClick={() => filterType === "root-cause" ? setFilterType("all") : setFilterType("root-cause")}
-            className="flex items-center gap-2 text-xs text-muted-foreground bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border border-border shadow-sm hover:border-destructive/50 transition-colors cursor-pointer"
+            onClick={() => setFilterType?.(filterType === "root-cause" ? "all" : "root-cause")}
+            className={cn(
+              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
+              filterType === "root-cause" ? "border-destructive text-destructive font-medium" : "border-border text-muted-foreground hover:border-destructive/50"
+            )}
           >
             <span className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse shadow-sm shadow-destructive/50" />
             Root Cause

@@ -209,6 +209,11 @@ export default function DashboardPage() {
           isAnalyzing={isAnalyzing}
           selectedNode={selectedNode}
           onClosePanel={handleClosePanel}
+          editMode={editMode}
+          setEditMode={setEditMode}
+          filterType={filterType}
+          setFilterType={setFilterType}
+          onOpenQuiz={() => setShowQuiz(true)}
         />
 
         {/* Right Panel - Remedy & Micro-learning */}

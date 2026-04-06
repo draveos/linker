@@ -173,21 +173,7 @@ export function RemedyPanel({ selectedNode, onClose, onOpenQuiz }: RemedyPanelPr
                     ? `Targeted Remedy: ${selectedNode.label}`
                     : selectedNode.label}
                 </h2>
-            {/* AI Confidence Score */}
-            {selectedNode.type === "missing" && (
-              <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium text-foreground">AI Confidence</span>
-                </div>
-                <span className={cn(
-                  "text-sm font-bold px-2.5 py-1 rounded-full",
-                  "bg-primary/20 text-primary"
-                )}>
-                  {Math.floor(Math.random() * 15 + 78)}%
-                </span>
-              </div>
-            )}
+                <p className="text-sm text-muted-foreground mt-1">{selectedNode.description}</p>
               </div>
               <Button
                 variant="ghost"
@@ -202,6 +188,19 @@ export function RemedyPanel({ selectedNode, onClose, onOpenQuiz }: RemedyPanelPr
 
           {/* Content */}
           <div className="flex-1 overflow-auto p-6 space-y-6">
+            {/* AI Confidence Score */}
+            {selectedNode.type === "missing" && (
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">AI Confidence</span>
+                </div>
+                <span className="text-sm font-bold px-2.5 py-1 rounded-full bg-primary/20 text-primary">
+                  {Math.floor(Math.random() * 15 + 78)}%
+                </span>
+              </div>
+            )}
+
             {/* Related Concepts Detected */}
             <div>
               <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">

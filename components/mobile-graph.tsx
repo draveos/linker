@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { ZoomIn, ZoomOut, Maximize2, Check, AlertTriangle, Circle, X, Lightbulb, Play, ArrowRight, BookOpen, GraduationCap } from "lucide-react"
+import { ZoomIn, ZoomOut, Maximize2, Check, AlertTriangle, Circle, X, Lightbulb, Play, ArrowRight, BookOpen, GraduationCap, Settings, Plus, Minus, Filter } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -20,6 +20,11 @@ interface MobileGraphProps {
   isAnalyzing?: boolean
   selectedNode: SelectedNode | null
   onClosePanel: () => void
+  editMode?: boolean
+  setEditMode?: (mode: boolean) => void
+  filterType?: "all" | "mastered" | "concept" | "root-cause"
+  setFilterType?: (type: "all" | "mastered" | "concept" | "root-cause") => void
+  onOpenQuiz?: () => void
 }
 
 interface GraphNode {
@@ -31,18 +36,18 @@ interface GraphNode {
   description?: string
 }
 
-const baseNodes: Omit<GraphNode, "type">[] = [
-  { id: "1", label: "Vectors", x: 15, y: 15, description: "Vector operations" },
-  { id: "2", label: "Matrix Ops", x: 35, y: 15, description: "Basic matrix arithmetic" },
-  { id: "3", label: "Multiplication", x: 18, y: 32, description: "Matrix multiplication" },
-  { id: "4", label: "Determinants", x: 40, y: 32, description: "Matrix determinants" },
-  { id: "5", label: "Inverse", x: 15, y: 50, description: "Matrix inverse" },
-  { id: "8", label: "Limits", x: 60, y: 15, description: "Understanding limits" },
-  { id: "9", label: "Derivatives", x: 80, y: 15, description: "Rate of change" },
-  { id: "10", label: "Chain Rule", x: 70, y: 32, description: "Composite derivatives" },
-  { id: "14", label: "Recursion", x: 55, y: 55, description: "Self-referential algorithms" },
-  { id: "15", label: "Trees", x: 80, y: 55, description: "Tree structures" },
-  { id: "16", label: "Traversal", x: 68, y: 72, description: "Tree traversal" },
+const initialNodes: Omit<GraphNode, "type">[] = [
+  { id: "1", label: "Vectors", x: 15, y: 12, description: "Vector operations" },
+  { id: "2", label: "Matrix Ops", x: 38, y: 12, description: "Basic matrix arithmetic" },
+  { id: "3", label: "Multiplication", x: 15, y: 28, description: "Matrix multiplication" },
+  { id: "4", label: "Determinants", x: 38, y: 28, description: "Matrix determinants" },
+  { id: "5", label: "Inverse", x: 26, y: 44, description: "Matrix inverse" },
+  { id: "8", label: "Limits", x: 58, y: 12, description: "Understanding limits" },
+  { id: "9", label: "Derivatives", x: 82, y: 12, description: "Rate of change" },
+  { id: "10", label: "Chain Rule", x: 70, y: 28, description: "Composite derivatives" },
+  { id: "14", label: "Recursion", x: 58, y: 48, description: "Self-referential algorithms" },
+  { id: "15", label: "Trees", x: 82, y: 48, description: "Tree structures" },
+  { id: "16", label: "Traversal", x: 70, y: 64, description: "Tree traversal" },
 ]
 
 const connections: [string, string][] = [
@@ -55,19 +60,19 @@ const masteredIds = ["1", "2", "8", "9"]
 
 const nodeRemedyContent: Record<string, { explanation: string; video: string; videoDuration: string; nextSteps: string[] }> = {
   "4": {
-    explanation: "For a 2×2 matrix [[a,b],[c,d]], the determinant is ad - bc.",
+    explanation: "For a 2x2 matrix [[a,b],[c,d]], the determinant is ad - bc.",
     video: "Understanding Determinants",
     videoDuration: "3:45",
-    nextSteps: ["Practice 2×2 determinants", "Move to 3×3 matrices"],
+    nextSteps: ["Practice 2x2 determinants", "Move to 3x3 matrices"],
   },
   "5": {
     explanation: "Find the determinant first. If det(A) = 0, no inverse exists.",
     video: "Finding Matrix Inverses",
     videoDuration: "4:20",
-    nextSteps: ["Practice 2×2 inverses", "Learn Gaussian elimination"],
+    nextSteps: ["Practice 2x2 inverses", "Learn Gaussian elimination"],
   },
   "10": {
-    explanation: "Chain rule: d/dx[f(g(x))] = f'(g(x)) · g'(x).",
+    explanation: "Chain rule: d/dx[f(g(x))] = f'(g(x)) * g'(x).",
     video: "Mastering the Chain Rule",
     videoDuration: "4:30",
     nextSteps: ["Practice nested functions", "Combine with other rules"],
@@ -100,8 +105,15 @@ export function MobileGraph({
   isAnalyzing,
   selectedNode,
   onClosePanel,
+  editMode = false,
+  setEditMode,
+  filterType = "all",
+  setFilterType,
+  onOpenQuiz,
 }: MobileGraphProps) {
   const [zoom, setZoom] = useState(1)
+  const [baseNodes, setBaseNodes] = useState(initialNodes)
+  const [showFilters, setShowFilters] = useState(false)
 
   const nodes = useMemo(() => {
     return baseNodes.map((node) => ({
@@ -112,10 +124,36 @@ export function MobileGraph({
           ? "mastered" 
           : "standard") as "standard" | "mastered" | "missing",
     }))
-  }, [activeRootCauseId])
+  }, [baseNodes, activeRootCauseId])
 
   const getNodeById = (id: string) => nodes.find((n) => n.id === id)
   const content = selectedNode ? (nodeRemedyContent[selectedNode.id] || defaultContent) : null
+
+  const getNodeOpacity = (node: GraphNode) => {
+    if (filterType === "all") return 1
+    if (filterType === "mastered" && node.type === "mastered") return 1
+    if (filterType === "concept" && node.type === "standard") return 1
+    if (filterType === "root-cause" && node.type === "missing") return 1
+    return 0.2
+  }
+
+  const handleDeleteNode = (nodeId: string) => {
+    setBaseNodes((prev) => prev.filter((n) => n.id !== nodeId))
+  }
+
+  const handleAddNode = () => {
+    const newId = (Math.max(...baseNodes.map(n => parseInt(n.id)), 0) + 1).toString()
+    setBaseNodes([
+      ...baseNodes,
+      {
+        id: newId,
+        label: `Concept ${newId}`,
+        x: 50,
+        y: 50,
+        description: "New concept",
+      },
+    ])
+  }
 
   return (
     <main className="flex-1 relative bg-muted/30 overflow-hidden md:hidden">
@@ -173,37 +211,118 @@ export function MobileGraph({
 
           {/* Nodes */}
           {nodes.map((node) => (
-            <button
-              key={node.id}
-              onClick={() => onNodeClick({
-                id: node.id,
-                label: node.label,
-                type: node.type,
-                description: node.description,
-              })}
-              className={cn(
-                "absolute transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 whitespace-nowrap",
-                node.type === "standard" && "bg-card border border-border text-foreground shadow-sm",
-                node.type === "mastered" && "bg-primary text-primary-foreground shadow-md shadow-primary/20",
-                node.type === "missing" && "bg-destructive/15 border border-destructive text-destructive animate-pulse shadow-md",
-                selectedNodeId === node.id && "ring-2 ring-ring ring-offset-1"
+            <div key={node.id} className="relative">
+              <button
+                onClick={() => onNodeClick({
+                  id: node.id,
+                  label: node.label,
+                  type: node.type,
+                  description: node.description,
+                })}
+                className={cn(
+                  "absolute transform -translate-x-1/2 -translate-y-1/2 px-3 py-2 rounded-lg font-medium text-xs transition-all flex items-center gap-1.5 whitespace-nowrap",
+                  node.type === "standard" && "bg-card border border-border text-foreground shadow-sm",
+                  node.type === "mastered" && "bg-primary text-primary-foreground shadow-md shadow-primary/20",
+                  node.type === "missing" && "bg-destructive/15 border border-destructive text-destructive animate-pulse shadow-md",
+                  selectedNodeId === node.id && "ring-2 ring-ring ring-offset-1"
+                )}
+                style={{ 
+                  left: `${node.x}%`, 
+                  top: `${node.y}%`,
+                  opacity: getNodeOpacity(node),
+                }}
+              >
+                {node.type === "mastered" && <Check className="h-3 w-3" />}
+                {node.type === "missing" && <AlertTriangle className="h-3 w-3" />}
+                {node.type === "standard" && <Circle className="h-2.5 w-2.5 text-muted-foreground" />}
+                {node.label}
+              </button>
+
+              {/* Edit Mode Delete Button */}
+              {editMode && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDeleteNode(node.id)
+                  }}
+                  className="absolute w-5 h-5 bg-destructive rounded-full flex items-center justify-center shadow-md"
+                  style={{
+                    left: `calc(${node.x}% + 20px)`,
+                    top: `calc(${node.y}% - 12px)`,
+                  }}
+                >
+                  <Minus className="h-3 w-3 text-destructive-foreground" />
+                </button>
               )}
-              style={{ left: `${node.x}%`, top: `${node.y}%` }}
-            >
-              {node.type === "mastered" && <Check className="h-3 w-3" />}
-              {node.type === "missing" && <AlertTriangle className="h-3 w-3" />}
-              {node.type === "standard" && <Circle className="h-2.5 w-2.5 text-muted-foreground" />}
-              {node.label}
-            </button>
+            </div>
           ))}
         </div>
       </div>
 
       {/* Header */}
-      <div className="absolute top-4 left-4 bg-card/80 backdrop-blur-sm rounded-xl p-3 border border-border shadow-lg">
-        <h2 className="text-sm font-bold text-foreground">Knowledge Graph</h2>
-        <p className="text-xs text-muted-foreground">Tap nodes to explore</p>
+      <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
+        <div className="bg-card/80 backdrop-blur-sm rounded-xl p-3 border border-border shadow-lg">
+          <h2 className="text-sm font-bold text-foreground">Knowledge Graph</h2>
+          <p className="text-xs text-muted-foreground">
+            {editMode ? "Edit mode" : "Tap nodes to explore"}
+          </p>
+        </div>
+
+        {/* Filter & Edit Controls */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 rounded-xl bg-card/80 backdrop-blur-sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={editMode ? "default" : "outline"}
+            size="icon"
+            className="h-10 w-10 rounded-xl bg-card/80 backdrop-blur-sm"
+            onClick={() => setEditMode?.(!editMode)}
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+
+      {/* Filter Panel */}
+      {showFilters && (
+        <div className="absolute top-20 right-4 bg-card/95 backdrop-blur-sm rounded-xl border border-border shadow-lg p-3 space-y-2">
+          {[
+            { key: "mastered", label: "Mastered", color: "bg-primary" },
+            { key: "concept", label: "Concept", color: "bg-muted-foreground/50" },
+            { key: "root-cause", label: "Root Cause", color: "bg-destructive" },
+          ].map((filter) => (
+            <button
+              key={filter.key}
+              onClick={() => setFilterType?.(filterType === filter.key ? "all" : filter.key as typeof filterType)}
+              className={cn(
+                "flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+                filterType === filter.key ? "bg-primary/10 text-primary" : "hover:bg-muted"
+              )}
+            >
+              <span className={cn("w-2.5 h-2.5 rounded-full", filter.color)} />
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Edit Mode Add Button */}
+      {editMode && (
+        <Button
+          onClick={handleAddNode}
+          className="absolute top-20 left-4 h-10 rounded-xl shadow-lg"
+          size="sm"
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add Node
+        </Button>
+      )}
 
       {/* Zoom Controls */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/95 backdrop-blur-sm border border-border rounded-xl p-1.5 shadow-lg">
@@ -221,7 +340,7 @@ export function MobileGraph({
 
       {/* Mobile Remedy Sheet */}
       <Sheet open={selectedNode !== null} onOpenChange={(open) => !open && onClosePanel()}>
-        <SheetContent side="bottom" className="h-[70vh] rounded-t-3xl p-0">
+        <SheetContent side="bottom" className="h-[75vh] rounded-t-3xl p-0">
           {selectedNode && content && (
             <>
               <SheetHeader className="p-4 border-b border-border">
@@ -244,6 +363,14 @@ export function MobileGraph({
               </SheetHeader>
 
               <div className="p-4 overflow-auto space-y-4">
+                {/* AI Confidence */}
+                {selectedNode.type === "missing" && (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20">
+                    <span className="text-sm font-medium">AI Confidence</span>
+                    <span className="text-sm font-bold text-primary">{Math.floor(Math.random() * 15 + 78)}%</span>
+                  </div>
+                )}
+
                 {/* Explanation */}
                 <div className={cn(
                   "rounded-xl p-3",
@@ -284,7 +411,10 @@ export function MobileGraph({
                   </div>
                 </div>
 
-                <Button className="w-full h-11 bg-primary text-primary-foreground font-medium">
+                <Button 
+                  onClick={onOpenQuiz}
+                  className="w-full h-11 bg-primary text-primary-foreground font-medium"
+                >
                   Take Quick Quiz
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
