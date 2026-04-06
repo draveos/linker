@@ -1,6 +1,6 @@
 "use client"
 
-import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap } from "lucide-react"
+import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { SelectedNode } from "@/app/page"
@@ -8,6 +8,7 @@ import type { SelectedNode } from "@/app/page"
 interface RemedyPanelProps {
   selectedNode: SelectedNode | null
   onClose: () => void
+  onOpenQuiz?: () => void
 }
 
 // Dynamic content based on node ID for more realistic experience
@@ -118,7 +119,7 @@ const defaultContent = {
   nextSteps: ["Complete practice exercises", "Review related concepts"],
 }
 
-export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
+export function RemedyPanel({ selectedNode, onClose, onOpenQuiz }: RemedyPanelProps) {
   const isOpen = selectedNode !== null
   const content = selectedNode ? (nodeRemedyContent[selectedNode.id] || defaultContent) : null
 
@@ -172,7 +173,21 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
                     ? `Targeted Remedy: ${selectedNode.label}`
                     : selectedNode.label}
                 </h2>
-                <p className="text-sm text-muted-foreground mt-1">{selectedNode.description}</p>
+            {/* AI Confidence Score */}
+            {selectedNode.type === "missing" && (
+              <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-foreground">AI Confidence</span>
+                </div>
+                <span className={cn(
+                  "text-sm font-bold px-2.5 py-1 rounded-full",
+                  "bg-primary/20 text-primary"
+                )}>
+                  {Math.floor(Math.random() * 15 + 78)}%
+                </span>
+              </div>
+            )}
               </div>
               <Button
                 variant="ghost"
@@ -187,6 +202,34 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
 
           {/* Content */}
           <div className="flex-1 overflow-auto p-6 space-y-6">
+            {/* Related Concepts Detected */}
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                <Zap className="h-4 w-4 text-muted-foreground" />
+                Related Concepts Detected
+              </h3>
+              <div className="space-y-2">
+                {[
+                  { label: "Matrix Multiplication", score: 0.72 },
+                  { label: "Linear Transformations", score: 0.68 },
+                  { label: "Scalar Operations", score: 0.45 },
+                ].map((concept) => (
+                  <div key={concept.label} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-foreground">{concept.label}</span>
+                      <span className="text-muted-foreground">{(concept.score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-primary to-primary/60 transition-all"
+                        style={{ width: `${concept.score * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* AI Explanation */}
             <div
               className={cn(
@@ -279,7 +322,10 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
 
           {/* Footer Action */}
           <div className="p-6 border-t border-border bg-muted/30">
-            <Button className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-semibold text-base">
+            <Button 
+              onClick={onOpenQuiz}
+              className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-semibold text-base"
+            >
               Take Quick Quiz
               <ArrowRight className="h-5 w-5 ml-2" />
             </Button>

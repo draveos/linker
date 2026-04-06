@@ -1,6 +1,6 @@
 "use client"
 
-import { Sparkles, Clock, BookOpen, BrainCircuit, Info } from "lucide-react"
+import { Sparkles, Clock, BookOpen, BrainCircuit, Info, Settings, Sliders } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
@@ -11,18 +11,30 @@ interface LeftSidebarProps {
   inputText: string
   setInputText: (text: string) => void
   isAnalyzing: boolean
+  analysisStep?: number
   onAnalyze: () => void
   recentAnalyses: Analysis[]
   onSelectAnalysis: (analysis: Analysis) => void
+  onShowProgress?: () => void
+  editMode?: boolean
+  setEditMode?: (mode: boolean) => void
+  filterType?: "all" | "mastered" | "concept" | "root-cause"
+  setFilterType?: (type: "all" | "mastered" | "concept" | "root-cause") => void
 }
 
 export function LeftSidebar({
   inputText,
   setInputText,
   isAnalyzing,
+  analysisStep,
   onAnalyze,
   recentAnalyses,
   onSelectAnalysis,
+  onShowProgress,
+  editMode,
+  setEditMode,
+  filterType,
+  setFilterType,
 }: LeftSidebarProps) {
   const formatTime = (date: Date) => {
     const now = new Date()
@@ -78,7 +90,7 @@ Example: I tried to find the inverse of matrix A = [[1,2],[3,4]] and got [[4,-2]
             {isAnalyzing ? (
               <>
                 <Spinner className="h-4 w-4 mr-2" />
-                <span>Analyzing...</span>
+                <span>Analyzing (Step {(analysisStep || 0) + 1}/4)...</span>
               </>
             ) : (
               <>
@@ -134,7 +146,26 @@ Example: I tried to find the inverse of matrix A = [[1,2],[3,4]] and got [[4,-2]
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border bg-muted/30">
+      <div className="p-4 border-t border-border bg-muted/30 space-y-3">
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditMode?.(!editMode)}
+            className={cn(editMode && "bg-primary/10 border-primary/50")}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            {editMode ? "Done Editing" : "Edit Graph"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onShowProgress}
+          >
+            <Sliders className="h-4 w-4 mr-2" />
+            Progress
+          </Button>
+        </div>
         <p className="text-xs text-center text-muted-foreground">
           Powered by AI Knowledge Graph Technology
         </p>
