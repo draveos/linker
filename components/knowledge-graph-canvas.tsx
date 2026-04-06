@@ -1,73 +1,107 @@
 "use client"
 
-import { useState, useMemo, useRef, useEffect } from "react"
-import { ZoomIn, ZoomOut, Maximize2, Check, AlertTriangle, Circle, Plus, Minus, Settings } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { useCallback, useMemo, useEffect } from "react"
+import ReactFlow, {
+  Node,
+  Edge,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  Handle,
+  Position,
+  MarkerType,
+  BackgroundVariant,
+  type NodeProps,
+} from "reactflow"
+import "reactflow/dist/style.css"
+import { Check, AlertTriangle, Circle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { SelectedNode, NodePosition } from "@/app/page"
+
+// Types
+export interface KnowledgeNode {
+  id: string
+  label: string
+  description: string
+  prerequisites: string[]
+}
+
+export interface SelectedNodeData {
+  id: string
+  label: string
+  type: "standard" | "mastered" | "missing"
+  description: string
+}
 
 interface KnowledgeGraphCanvasProps {
-  onNodeClick: (node: SelectedNode) => void
+  onNodeClick: (node: SelectedNodeData) => void
   selectedNodeId?: string
   activeRootCauseId?: string | null
   isAnalyzing?: boolean
   analysisStep?: number
-  editMode?: boolean
-  filterType?: "all" | "mastered" | "concept" | "root-cause"
-  setFilterType?: (type: "all" | "mastered" | "concept" | "root-cause") => void
-  onNodePositionChange?: (positions: NodePosition[]) => void
-  onOpenQuiz?: () => void
 }
 
-interface GraphNode {
-  id: string
-  label: string
-  type: "standard" | "mastered" | "missing"
-  x: number
-  y: number
-  description?: string
-  category: "linear-algebra" | "calculus" | "data-structures"
+// 기초 선형대수학 개념 (8-12개)
+const knowledgeNodes: KnowledgeNode[] = [
+  { id: "1", label: "벡터", description: "벡터의 기본 개념과 연산", prerequisites: [] },
+  { id: "2", label: "행렬", description: "행렬의 정의와 기본 연산", prerequisites: ["1"] },
+  { id: "3", label: "행렬 곱셈", description: "행렬 간의 곱셈 연산", prerequisites: ["2"] },
+  { id: "4", label: "행렬식", description: "행렬식(Determinant) 계산법", prerequisites: ["3"] },
+  { id: "5", label: "역행렬", description: "역행렬의 존재 조건과 계산", prerequisites: ["4"] },
+  { id: "6", label: "여인수 전개", description: "여인수를 이용한 행렬식 계산", prerequisites: ["4"] },
+  { id: "7", label: "크래머 공식", description: "행렬식을 이용한 연립방정식 풀이", prerequisites: ["5", "6"] },
+  { id: "8", label: "선형 변환", description: "행렬을 이용한 선형 변환", prerequisites: ["3"] },
+  { id: "9", label: "고유값", description: "고유값과 고유벡터 계산", prerequisites: ["4", "8"] },
+  { id: "10", label: "대각화", description: "행렬의 대각화", prerequisites: ["9"] },
+]
+
+// 완료된 개념 (파란색)
+const masteredNodeIds = ["1", "2", "3"]
+
+// 노드 위치 (계층 구조)
+const nodePositions: Record<string, { x: number; y: number }> = {
+  "1": { x: 400, y: 50 },
+  "2": { x: 400, y: 130 },
+  "3": { x: 280, y: 210 },
+  "8": { x: 520, y: 210 },
+  "4": { x: 400, y: 290 },
+  "5": { x: 280, y: 370 },
+  "6": { x: 520, y: 370 },
+  "9": { x: 520, y: 290 },
+  "7": { x: 400, y: 450 },
+  "10": { x: 520, y: 450 },
 }
 
-const baseNodes: Omit<GraphNode, "type">[] = [
-  // Linear Algebra - left section
-  { id: "1", label: "Vectors", category: "linear-algebra", x: 15, y: 20, description: "Vector operations and properties" },
-  { id: "2", label: "Matrix Operations", category: "linear-algebra", x: 28, y: 20, description: "Basic matrix arithmetic" },
-  { id: "3", label: "Matrix Multiplication", category: "linear-algebra", x: 15, y: 38, description: "Row-column multiplication" },
-  { id: "4", label: "Determinants", category: "linear-algebra", x: 28, y: 38, description: "Calculating matrix determinants" },
-  { id: "5", label: "Matrix Inverse", category: "linear-algebra", x: 15, y: 56, description: "Finding inverse matrices" },
-  { id: "6", label: "Cofactor Expansion", category: "linear-algebra", x: 28, y: 56, description: "Cofactor method for determinants" },
-  { id: "7", label: "Linear Systems", category: "linear-algebra", x: 21, y: 74, description: "Solving systems of equations" },
-  // Calculus - center section
-  { id: "8", label: "Limits", category: "calculus", x: 45, y: 20, description: "Understanding limits and continuity" },
-  { id: "9", label: "Derivatives", category: "calculus", x: 58, y: 20, description: "Rate of change and slopes" },
-  { id: "10", label: "Chain Rule", category: "calculus", x: 45, y: 40, description: "Derivative of composite functions" },
-  { id: "11", label: "Integration", category: "calculus", x: 58, y: 40, description: "Finding antiderivatives" },
-  { id: "12", label: "Partial Derivatives", category: "calculus", x: 51, y: 60, description: "Multivariable calculus" },
-  // Data Structures - right section
-  { id: "13", label: "Arrays", category: "data-structures", x: 75, y: 20, description: "Linear data storage" },
-  { id: "14", label: "Recursion", category: "data-structures", x: 75, y: 40, description: "Self-referential algorithms" },
-  { id: "15", label: "Trees", category: "data-structures", x: 88, y: 40, description: "Hierarchical data structures" },
-  { id: "16", label: "Tree Traversal", category: "data-structures", x: 88, y: 60, description: "Visiting tree nodes systematically" },
-  { id: "17", label: "Binary Search", category: "data-structures", x: 75, y: 60, description: "Divide and conquer search" },
-]
+// Custom Node Component
+function ConceptNode({ data, selected }: NodeProps) {
+  const { label, nodeType, isAnalyzing } = data
 
-const connections: [string, string][] = [
-  ["1", "2"], ["1", "3"], ["2", "3"], ["2", "4"], ["3", "4"],
-  ["3", "5"], ["4", "5"], ["4", "6"], ["5", "7"], ["6", "7"],
-  ["8", "9"], ["9", "10"], ["9", "11"], ["10", "11"], ["10", "12"],
-  ["13", "14"], ["13", "15"], ["14", "15"], ["14", "16"], ["15", "16"], ["14", "17"],
-  ["7", "12"], ["11", "17"],
-]
+  return (
+    <div
+      className={cn(
+        "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
+        nodeType === "mastered" && "bg-primary text-primary-foreground border-primary shadow-primary/25",
+        nodeType === "standard" && "bg-card text-card-foreground border-border hover:border-primary/50",
+        nodeType === "missing" && "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
+        nodeType === "missing" && isAnalyzing && "animate-pulse",
+        selected && "ring-2 ring-ring ring-offset-2"
+      )}
+    >
+      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
 
-const masteredIds = ["1", "2", "8", "9", "13"]
+      <div className="flex items-center justify-center gap-2">
+        {nodeType === "mastered" && <Check className="h-4 w-4" />}
+        {nodeType === "missing" && <AlertTriangle className="h-4 w-4" />}
+        {nodeType === "standard" && <Circle className="h-3 w-3 opacity-50" />}
+        <span className="font-medium text-sm">{label}</span>
+      </div>
 
-const analysisSteps = [
-  "Mapping problem to related concepts...",
-  "Analyzing reasoning and detecting gaps...",
-  "Tracing prerequisite dependencies...",
-  "Root cause identified",
-]
+      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
+    </div>
+  )
+}
+
+const nodeTypes = { concept: ConceptNode }
 
 export function KnowledgeGraphCanvas({
   onNodeClick,
@@ -75,394 +109,179 @@ export function KnowledgeGraphCanvas({
   activeRootCauseId,
   isAnalyzing,
   analysisStep,
-  editMode,
-  filterType = "all",
-  setFilterType,
-  onNodePositionChange,
-  onOpenQuiz,
 }: KnowledgeGraphCanvasProps) {
-  const [zoom, setZoom] = useState(1)
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
-  const [nodes, setNodes] = useState(baseNodes)
-  const svgRef = useRef<SVGSVGElement>(null)
+  // Generate nodes
+  const initialNodes: Node[] = useMemo(() => {
+    return knowledgeNodes.map((node) => {
+      let nodeType: "standard" | "mastered" | "missing" = "standard"
+      if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
+      else if (node.id === activeRootCauseId) nodeType = "missing"
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 0.15, 1.5))
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 0.15, 0.6))
-  const handleReset = () => setZoom(1)
+      return {
+        id: node.id,
+        type: "concept",
+        position: nodePositions[node.id] || { x: 0, y: 0 },
+        data: {
+          label: node.label,
+          nodeType,
+          description: node.description,
+          isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
+        },
+        selected: node.id === selectedNodeId,
+      }
+    })
+  }, [activeRootCauseId, selectedNodeId, isAnalyzing])
 
-  const computedNodes = useMemo(() => {
-    return nodes.map((node) => ({
-      ...node,
-      type: (activeRootCauseId === node.id 
-        ? "missing" 
-        : masteredIds.includes(node.id) 
-          ? "mastered" 
-          : "standard") as "standard" | "mastered" | "missing",
-    }))
-  }, [nodes, activeRootCauseId])
+  // Generate edges
+  const initialEdges: Edge[] = useMemo(() => {
+    const edges: Edge[] = []
+    knowledgeNodes.forEach((node) => {
+      node.prerequisites.forEach((prereqId) => {
+        const isPathToRootCause =
+          activeRootCauseId && (node.id === activeRootCauseId || prereqId === activeRootCauseId)
 
-  const getNodeById = (id: string) => computedNodes.find((n) => n.id === id)
+        edges.push({
+          id: `${prereqId}-${node.id}`,
+          source: prereqId,
+          target: node.id,
+          type: "smoothstep",
+          animated: isAnalyzing && isPathToRootCause,
+          style: {
+            stroke: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--border))",
+            strokeWidth: isPathToRootCause ? 2.5 : 1.5,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",
+            width: 16,
+            height: 16,
+          },
+        })
+      })
+    })
+    return edges
+  }, [activeRootCauseId, isAnalyzing])
 
-  const isEdgeHighlighted = (fromId: string, toId: string) => {
-    const fromNode = getNodeById(fromId)
-    const toNode = getNodeById(toId)
-    const fromIsMissing = fromNode?.type === "missing"
-    const toIsMissing = toNode?.type === "missing"
-    const isHovered = fromId === hoveredNodeId || toId === hoveredNodeId
-    return fromIsMissing || toIsMissing || isHovered
-  }
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  const getNodeOpacity = (node: GraphNode) => {
-    if (filterType === "all") return 1
-    if (filterType === "mastered" && node.type === "mastered") return 1
-    if (filterType === "concept" && node.type === "standard") return 1
-    if (filterType === "root-cause" && node.type === "missing") return 1
-    return 0.15
-  }
+  // Update when activeRootCauseId changes
+  useEffect(() => {
+    setNodes(initialNodes)
+    setEdges(initialEdges)
+  }, [initialNodes, initialEdges, setNodes, setEdges])
 
-  const handleNodeMouseDown = (e: React.MouseEvent, nodeId: string) => {
-    if (!editMode) return
-    e.preventDefault()
-    setDraggedNodeId(nodeId)
-  }
+  const handleNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const kNode = knowledgeNodes.find((n) => n.id === node.id)
+      if (kNode) {
+        let nodeType: "standard" | "mastered" | "missing" = "standard"
+        if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
+        else if (node.id === activeRootCauseId) nodeType = "missing"
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!draggedNodeId || !svgRef.current || !editMode) return
-    
-    const svg = svgRef.current
-    const rect = svg.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * 100
-    const y = ((e.clientY - rect.top) / rect.height) * 100
+        onNodeClick({
+          id: node.id,
+          label: kNode.label,
+          type: nodeType,
+          description: kNode.description,
+        })
+      }
+    },
+    [onNodeClick, activeRootCauseId]
+  )
 
-    setNodes((prev) =>
-      prev.map((node) =>
-        node.id === draggedNodeId
-          ? { ...node, x: Math.max(5, Math.min(95, x)), y: Math.max(5, Math.min(95, y)) }
-          : node
-      )
-    )
-  }
-
-  const handleMouseUp = () => {
-    setDraggedNodeId(null)
-  }
-
-  const handleAddNode = () => {
-    const newId = Math.max(...nodes.map(n => parseInt(n.id)), 0) + 1
-    setNodes([
-      ...nodes,
-      {
-        id: newId.toString(),
-        label: `New Concept ${newId}`,
-        category: "linear-algebra",
-        x: 50,
-        y: 50,
-        description: "New concept",
-      },
-    ])
-  }
-
-  const handleDeleteNode = (nodeId: string) => {
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId))
-  }
+  const analysisSteps = [
+    "문제를 관련 개념에 매핑 중...",
+    "풀이 과정 분석 및 오류 탐지 중...",
+    "선행 개념 의존성 추적 중...",
+    "결손 개념 확정 완료",
+  ]
 
   return (
-    <main 
-      className="flex-1 relative bg-muted/30 overflow-hidden max-md:hidden"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-    >
-      {/* Dotted Grid Background */}
-      <div
-        className="absolute inset-0 opacity-30"
-        style={{
-          backgroundImage: `radial-gradient(circle, hsl(var(--foreground) / 0.15) 1px, transparent 1px)`,
-          backgroundSize: "20px 20px",
-        }}
-      />
+    <div className="flex-1 h-full max-md:hidden relative">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={handleNodeClick}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        minZoom={0.5}
+        maxZoom={1.5}
+        className="bg-muted/30"
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
+        <Controls
+          className="!bg-card !border-border !rounded-xl !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!rounded-lg [&>button:hover]:!bg-muted"
+          showInteractive={false}
+        />
+      </ReactFlow>
 
-      {/* Multi-Step Analysis Overlay */}
+      {/* Analysis Progress Overlay */}
       {isAnalyzing && (
-        <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-30 flex items-center justify-center">
-          <div className="bg-card border border-border rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-6 max-w-md">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-            </div>
-            
-            {/* Analysis Steps */}
-            <div className="w-full space-y-3">
-              {analysisSteps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "flex items-center gap-3 p-3 rounded-lg transition-all duration-300",
-                    idx < (analysisStep + 1)
-                      ? "bg-primary/10 border border-primary/30"
-                      : "bg-muted/50 border border-border opacity-50"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold",
-                      idx < (analysisStep + 1)
-                        ? "bg-primary border-primary text-primary-foreground"
-                        : "border-muted-foreground"
-                    )}
-                  >
-                    {idx < analysisStep ? "✓" : idx + 1}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-sm font-medium",
-                      idx < (analysisStep + 1) ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    {step}
-                  </span>
-                </div>
-              ))}
-            </div>
+        <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-20 flex items-center justify-center">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4">
+            <div className="flex flex-col items-center gap-5">
+              <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
 
-            <div className="text-center text-xs text-muted-foreground">
-              <p>AI is analyzing your error...</p>
-              <p className="font-medium text-foreground mt-1">This may take a few seconds</p>
+              <div className="w-full space-y-2">
+                {analysisSteps.map((step, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "flex items-center gap-3 p-2.5 rounded-lg transition-all",
+                      idx <= (analysisStep ?? 0)
+                        ? "bg-primary/10 border border-primary/30"
+                        : "bg-muted/50 border border-transparent opacity-40"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0",
+                        idx <= (analysisStep ?? 0)
+                          ? "bg-primary border-primary text-primary-foreground"
+                          : "border-muted-foreground text-muted-foreground"
+                      )}
+                    >
+                      {idx < (analysisStep ?? 0) ? <Check className="h-3 w-3" /> : idx + 1}
+                    </div>
+                    <span className="text-sm">{step}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Canvas Area */}
-      <div
-        className="absolute inset-0 transition-all duration-300 ease-out origin-center"
-        style={{ transform: `scale(${zoom})` }}
-      >
-        <div className="absolute inset-0">
-          {/* SVG Connections */}
-          <svg 
-            ref={svgRef}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-          >
-            <defs>
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                <feMerge>
-                  <feMergeNode in="coloredBlur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
-            {connections.map(([from, to]) => {
-              const fromNode = getNodeById(from)
-              const toNode = getNodeById(to)
-              if (!fromNode || !toNode) return null
-
-              const highlighted = isEdgeHighlighted(from, to)
-              const isMissingPath = fromNode.type === "missing" || toNode.type === "missing"
-
-              return (
-                <line
-                  key={`${from}-${to}`}
-                  x1={`${fromNode.x}%`}
-                  y1={`${fromNode.y}%`}
-                  x2={`${toNode.x}%`}
-                  y2={`${toNode.y}%`}
-                  stroke={isMissingPath ? "hsl(var(--destructive))" : highlighted ? "hsl(var(--primary))" : "hsl(var(--border))"}
-                  strokeWidth={highlighted ? 2.5 : 1.5}
-                  strokeDasharray={isMissingPath ? "6,4" : "none"}
-                  className={cn(
-                    "transition-all duration-300",
-                    isMissingPath && "animate-pulse"
-                  )}
-                  filter={highlighted ? "url(#glow)" : undefined}
-                  opacity={highlighted ? 1 : 0.6}
-                />
-              )
-            })}
-          </svg>
-
-          {/* Nodes */}
-          {computedNodes.map((node) => {
-            const isSelected = selectedNodeId === node.id
-            const isHovered = hoveredNodeId === node.id
-            const isDragging = draggedNodeId === node.id
-            const nodeOpacity = getNodeOpacity(node)
-            
-            return (
-              <div key={node.id} className="relative">
-                <button
-                  onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  onClick={() => {
-                    // Only open popup if not in edit mode
-                    if (!editMode) {
-                      onNodeClick({
-                        id: node.id,
-                        label: node.label,
-                        type: node.type,
-                        description: node.description,
-                      })
-                    }
-                  }}
-                  onMouseEnter={() => setHoveredNodeId(node.id)}
-                  onMouseLeave={() => setHoveredNodeId(null)}
-                  className={cn(
-                    "absolute transform -translate-x-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2 whitespace-nowrap",
-                    editMode ? (draggedNodeId === node.id ? "cursor-grabbing" : "cursor-grab") : "cursor-pointer",
-                    // Standard node
-                    node.type === "standard" && [
-                      "bg-card border-2 border-border text-foreground shadow-md",
-                      !editMode && "hover:border-primary/50 hover:shadow-lg hover:scale-105",
-                      isHovered && !editMode && "border-primary/50 shadow-lg scale-105",
-                    ],
-                    // Mastered node
-                    node.type === "mastered" && [
-                      "bg-primary text-primary-foreground border-2 border-primary shadow-lg shadow-primary/20",
-                      !editMode && "hover:brightness-110 hover:scale-105 hover:shadow-xl hover:shadow-primary/30",
-                      isHovered && !editMode && "brightness-110 scale-105 shadow-xl shadow-primary/30",
-                    ],
-                    // Missing/Root Cause node
-                    node.type === "missing" && [
-                      "bg-destructive/15 border-2 border-destructive text-destructive shadow-lg shadow-destructive/30",
-                      "animate-pulse",
-                      !editMode && "hover:bg-destructive/25 hover:scale-110",
-                      isHovered && !editMode && "bg-destructive/25 scale-110",
-                    ],
-                    // Selected state (only when not editing)
-                    isSelected && !editMode && "ring-2 ring-ring ring-offset-2 ring-offset-background scale-105",
-                    // Edit mode indicator
-                    editMode && "ring-2 ring-dashed ring-muted-foreground/30"
-                  )}
-                  style={{
-                    left: `${node.x}%`,
-                    top: `${node.y}%`,
-                    opacity: nodeOpacity,
-                  }}
-                >
-                  {node.type === "mastered" && <Check className="h-4 w-4" />}
-                  {node.type === "missing" && <AlertTriangle className="h-4 w-4" />}
-                  {node.type === "standard" && <Circle className="h-3 w-3 text-muted-foreground" />}
-                  {node.label}
-                </button>
-
-                {/* Edit Mode Delete Button */}
-                {editMode && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDeleteNode(node.id)
-                    }}
-                    className="absolute w-6 h-6 bg-destructive hover:bg-destructive/80 rounded-full flex items-center justify-center shadow-md transition-colors z-10"
-                    style={{
-                      left: `calc(${node.x}% + 30px)`,
-                      top: `calc(${node.y}% - 15px)`,
-                    }}
-                  >
-                    <Minus className="h-3 w-3 text-white" />
-                  </button>
-                )}
-              </div>
-            )
-          })}
+      {/* Title */}
+      <div className="absolute top-4 left-4 z-10">
+        <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl px-4 py-3 shadow-lg">
+          <h2 className="text-base font-bold text-foreground">지식 그래프</h2>
+          <p className="text-xs text-muted-foreground">기초 선형대수학</p>
         </div>
       </div>
 
-      {/* Header */}
-      <div className="absolute top-6 left-6 right-6 flex items-center justify-between pointer-events-none">
-        <div className="pointer-events-auto bg-card/80 backdrop-blur-sm rounded-xl p-4 border border-border shadow-lg">
-          <h2 className="text-lg font-bold text-foreground">Knowledge Graph</h2>
-          <p className="text-sm text-muted-foreground">
-            {editMode ? "Edit mode: Drag to move, click - to delete" : "Click on nodes to explore concepts"}
-          </p>
+      {/* Legend */}
+      <div className="absolute top-4 right-4 z-10">
+        <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-3 shadow-lg space-y-2">
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded-full bg-primary" />
+            <span className="text-muted-foreground">완료된 개념</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded-full bg-muted-foreground/30 border border-border" />
+            <span className="text-muted-foreground">학습 필요</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 rounded-full bg-destructive" />
+            <span className="text-muted-foreground">결손 개념</span>
+          </div>
         </div>
       </div>
-
-      {/* Filter Legend */}
-      <div className="absolute top-6 right-6 pointer-events-none">
-        <div className="flex flex-col gap-2 pointer-events-auto">
-          <button
-            onClick={() => setFilterType?.(filterType === "mastered" ? "all" : "mastered")}
-            className={cn(
-              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
-              filterType === "mastered" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground hover:border-primary/50"
-            )}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-primary shadow-sm shadow-primary/50" />
-            Mastered
-          </button>
-          <button
-            onClick={() => setFilterType?.(filterType === "concept" ? "all" : "concept")}
-            className={cn(
-              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
-              filterType === "concept" ? "border-primary text-primary font-medium" : "border-border text-muted-foreground hover:border-primary/50"
-            )}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-muted-foreground/50" />
-            Concept
-          </button>
-          <button
-            onClick={() => setFilterType?.(filterType === "root-cause" ? "all" : "root-cause")}
-            className={cn(
-              "flex items-center gap-2 text-xs bg-card/80 backdrop-blur-sm px-3 py-2 rounded-full border shadow-sm transition-colors cursor-pointer",
-              filterType === "root-cause" ? "border-destructive text-destructive font-medium" : "border-border text-muted-foreground hover:border-destructive/50"
-            )}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse shadow-sm shadow-destructive/50" />
-            Root Cause
-          </button>
-        </div>
-      </div>
-
-      {/* Floating Toolbar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/95 backdrop-blur-sm border border-border rounded-2xl p-2 shadow-xl pointer-events-auto">
-        {editMode && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 rounded-xl hover:bg-primary/10 text-primary"
-              onClick={handleAddNode}
-              title="Add Node"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <div className="w-px h-6 bg-border mx-1" />
-          </>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-xl hover:bg-secondary"
-          onClick={handleZoomOut}
-          title="Zoom Out"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <div className="w-px h-6 bg-border mx-1" />
-        <span className="text-sm font-medium text-foreground px-3 min-w-[60px] text-center tabular-nums">
-          {Math.round(zoom * 100)}%
-        </span>
-        <div className="w-px h-6 bg-border mx-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-xl hover:bg-secondary"
-          onClick={handleZoomIn}
-          title="Zoom In"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <div className="w-px h-6 bg-border mx-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 rounded-xl hover:bg-secondary"
-          onClick={handleReset}
-          title="Reset View"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </Button>
-      </div>
-    </main>
+    </div>
   )
 }

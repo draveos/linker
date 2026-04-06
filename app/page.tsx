@@ -1,134 +1,97 @@
 "use client"
 
-import { useState, useCallback, useMemo, useRef, useEffect } from "react"
-import { LeftSidebar } from "@/components/left-sidebar"
-import { KnowledgeGraphCanvas } from "@/components/knowledge-graph-canvas"
-import { RemedyPanel } from "@/components/remedy-panel"
-import { MobileNav } from "@/components/mobile-nav"
-import { MobileGraph } from "@/components/mobile-graph"
-import { QuizModal } from "@/components/quiz-modal"
-import { ProgressDashboard } from "@/components/progress-dashboard"
+import { useState, useCallback, useRef, useEffect } from "react"
+import { LeftSidebar, type Analysis } from "@/components/left-sidebar"
+import { KnowledgeGraphCanvas, type SelectedNodeData } from "@/components/knowledge-graph-canvas"
+import { RemedyPanel, type SelectedNode } from "@/components/remedy-panel"
 
-export interface Analysis {
-  id: string
-  title: string
-  subject: string
-  timestamp: Date
-  rootCauseNodeId?: string
-}
-
-export interface SelectedNode {
-  id: string
-  label: string
-  type: "standard" | "mastered" | "missing"
-  description?: string
-}
-
-export interface NodePosition {
-  id: string
-  x: number
-  y: number
-}
-
-export default function DashboardPage() {
+export default function LinkerPage() {
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisStep, setAnalysisStep] = useState(0)
   const [inputText, setInputText] = useState("")
-  const [activeRootCause, setActiveRootCause] = useState<string | null>("4")
-  const [showQuiz, setShowQuiz] = useState(false)
-  const [showProgress, setShowProgress] = useState(false)
-  const [nodePositions, setNodePositions] = useState<NodePosition[]>([])
-  const [editMode, setEditMode] = useState(false)
-  const [filterType, setFilterType] = useState<"all" | "mastered" | "concept" | "root-cause">("all")
-  const [analysisHistory, setAnalysisHistory] = useState<Analysis[]>([
+  const [activeRootCause, setActiveRootCause] = useState<string | null>(null)
+  const analysisTimeoutRef = useRef<NodeJS.Timeout>()
+
+  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([
     {
       id: "1",
-      title: "Matrix Inversion",
-      subject: "Linear Algebra",
+      title: "역행렬 계산 오류",
+      subject: "선형대수학",
       timestamp: new Date(Date.now() - 1000 * 60 * 30),
       rootCauseNodeId: "4",
     },
     {
       id: "2",
-      title: "Chain Rule",
-      subject: "Calculus",
+      title: "행렬식 부호 실수",
+      subject: "선형대수학",
       timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      rootCauseNodeId: "9",
-    },
-    {
-      id: "3",
-      title: "Tree Traversal",
-      subject: "Data Structures",
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24),
-      rootCauseNodeId: "12",
+      rootCauseNodeId: "4",
     },
   ])
-  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>(analysisHistory)
-  const analysisTimeoutRef = useRef<NodeJS.Timeout>()
 
+  // 오답 분석 함수 (기획서: 4단계 분석 프로세스)
   const handleAnalyze = useCallback(() => {
     if (!inputText.trim()) return
     setIsAnalyzing(true)
     setAnalysisStep(0)
     setSelectedNode(null)
-    
-    // Step 1: Mapping problem
+    setActiveRootCause(null)
+
+    // Step 1: 개념 매핑
     analysisTimeoutRef.current = setTimeout(() => {
       setAnalysisStep(1)
-      
-      // Step 2: Analyzing reasoning
+
+      // Step 2: 풀이 분석
       analysisTimeoutRef.current = setTimeout(() => {
         setAnalysisStep(2)
-        
-        // Step 3: Tracing dependencies
+
+        // Step 3: 의존성 추적
         analysisTimeoutRef.current = setTimeout(() => {
           setAnalysisStep(3)
-          
-          // Step 4: Complete analysis
+
+          // Step 4: 결손 개념 확정
           analysisTimeoutRef.current = setTimeout(() => {
             setIsAnalyzing(false)
             setAnalysisStep(0)
-            
-            // Determine root cause based on keywords
-            let rootCauseId = "4"
-            let title = "Determinant Calculation"
-            let subject = "Linear Algebra"
-            
+
+            // 입력 텍스트 기반 결손 노드 결정
+            let rootCauseId = "4" // 기본: 행렬식
+            let title = "행렬식 계산 오류"
+
             const lowerInput = inputText.toLowerCase()
-            if (lowerInput.includes("chain rule") || lowerInput.includes("derivative")) {
-              rootCauseId = "9"
-              title = "Chain Rule"
-              subject = "Calculus"
-            } else if (lowerInput.includes("tree") || lowerInput.includes("traversal")) {
-              rootCauseId = "16"
-              title = "Tree Traversal"
-              subject = "Data Structures"
-            } else if (lowerInput.includes("recursion")) {
-              rootCauseId = "14"
-              title = "Recursion"
-              subject = "Data Structures"
-            } else if (lowerInput.includes("inverse") || lowerInput.includes("inversion")) {
+            if (lowerInput.includes("역행렬") || lowerInput.includes("inverse")) {
               rootCauseId = "5"
-              title = "Matrix Inverse"
-              subject = "Linear Algebra"
+              title = "역행렬 계산 오류"
+            } else if (lowerInput.includes("여인수") || lowerInput.includes("cofactor")) {
+              rootCauseId = "6"
+              title = "여인수 전개 오류"
+            } else if (lowerInput.includes("크래머") || lowerInput.includes("연립")) {
+              rootCauseId = "7"
+              title = "크래머 공식 적용 오류"
+            } else if (lowerInput.includes("고유값") || lowerInput.includes("eigen")) {
+              rootCauseId = "9"
+              title = "고유값 계산 오류"
+            } else if (lowerInput.includes("대각화") || lowerInput.includes("diagonal")) {
+              rootCauseId = "10"
+              title = "대각화 과정 오류"
             }
-            
+
             setActiveRootCause(rootCauseId)
-            
+
+            // 분석 기록 추가
             const newAnalysis: Analysis = {
               id: Date.now().toString(),
               title,
-              subject,
+              subject: "선형대수학",
               timestamp: new Date(),
               rootCauseNodeId: rootCauseId,
             }
             setRecentAnalyses((prev) => [newAnalysis, ...prev.slice(0, 4)])
-            setAnalysisHistory((prev) => [newAnalysis, ...prev])
-          }, 700)
-        }, 700)
-      }, 700)
-    }, 700)
+          }, 800)
+        }, 800)
+      }, 800)
+    }, 800)
   }, [inputText])
 
   useEffect(() => {
@@ -139,8 +102,13 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const handleNodeClick = useCallback((node: SelectedNode) => {
-    setSelectedNode(node)
+  const handleNodeClick = useCallback((node: SelectedNodeData) => {
+    setSelectedNode({
+      id: node.id,
+      label: node.label,
+      type: node.type,
+      description: node.description,
+    })
   }, [])
 
   const handleClosePanel = useCallback(() => {
@@ -153,90 +121,33 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const handleNodePositionChange = useCallback((positions: NodePosition[]) => {
-    setNodePositions(positions)
-  }, [])
-
   return (
-    <>
-      {/* Mobile Navigation */}
-      <MobileNav
+    <div className="flex h-screen bg-background overflow-hidden">
+      {/* 좌측 사이드바 - 오답 입력 & 분석 */}
+      <LeftSidebar
         inputText={inputText}
         setInputText={setInputText}
         isAnalyzing={isAnalyzing}
+        analysisStep={analysisStep}
         onAnalyze={handleAnalyze}
         recentAnalyses={recentAnalyses}
         onSelectAnalysis={handleSelectAnalysis}
       />
 
-      {/* Desktop Layout */}
-      <div className="flex h-screen bg-background overflow-hidden max-md:pt-[72px]">
-        {/* Left Sidebar - Error Analyzer */}
-        <LeftSidebar
-          inputText={inputText}
-          setInputText={setInputText}
-          isAnalyzing={isAnalyzing}
-          analysisStep={analysisStep}
-          onAnalyze={handleAnalyze}
-          recentAnalyses={recentAnalyses}
-          onSelectAnalysis={handleSelectAnalysis}
-          onShowProgress={() => setShowProgress(true)}
-          editMode={editMode}
-          setEditMode={setEditMode}
-          filterType={filterType}
-          setFilterType={setFilterType}
-        />
+      {/* 중앙 - React Flow 지식 그래프 */}
+      <KnowledgeGraphCanvas
+        onNodeClick={handleNodeClick}
+        selectedNodeId={selectedNode?.id}
+        activeRootCauseId={activeRootCause}
+        isAnalyzing={isAnalyzing}
+        analysisStep={analysisStep}
+      />
 
-        {/* Center - Knowledge Graph Canvas (Desktop) */}
-        <KnowledgeGraphCanvas
-          onNodeClick={handleNodeClick}
-          selectedNodeId={selectedNode?.id}
-          activeRootCauseId={activeRootCause}
-          isAnalyzing={isAnalyzing}
-          analysisStep={analysisStep}
-          editMode={editMode}
-          filterType={filterType}
-          setFilterType={setFilterType}
-          onNodePositionChange={handleNodePositionChange}
-          onOpenQuiz={() => setShowQuiz(true)}
-        />
-
-        {/* Center - Knowledge Graph Canvas (Mobile) */}
-        <MobileGraph
-          onNodeClick={handleNodeClick}
-          selectedNodeId={selectedNode?.id}
-          activeRootCauseId={activeRootCause}
-          isAnalyzing={isAnalyzing}
-          selectedNode={selectedNode}
-          onClosePanel={handleClosePanel}
-          editMode={editMode}
-          setEditMode={setEditMode}
-          filterType={filterType}
-          setFilterType={setFilterType}
-          onOpenQuiz={() => setShowQuiz(true)}
-        />
-
-        {/* Right Panel - Remedy & Micro-learning */}
-        <RemedyPanel
-          selectedNode={selectedNode}
-          onClose={handleClosePanel}
-          onOpenQuiz={() => setShowQuiz(true)}
-        />
-      </div>
-
-      {/* Quiz Modal */}
-      <QuizModal
-        isOpen={showQuiz}
-        onClose={() => setShowQuiz(false)}
+      {/* 우측 패널 - 마이크로 러닝 */}
+      <RemedyPanel
         selectedNode={selectedNode}
+        onClose={handleClosePanel}
       />
-
-      {/* Progress Dashboard Modal */}
-      <ProgressDashboard
-        isOpen={showProgress}
-        onClose={() => setShowProgress(false)}
-        analysisHistory={analysisHistory}
-      />
-    </>
+    </div>
   )
 }
