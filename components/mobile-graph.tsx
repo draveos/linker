@@ -37,17 +37,17 @@ interface GraphNode {
 }
 
 const initialNodes: Omit<GraphNode, "type">[] = [
-  { id: "1", label: "Vectors", x: 15, y: 12, description: "Vector operations" },
-  { id: "2", label: "Matrix Ops", x: 38, y: 12, description: "Basic matrix arithmetic" },
-  { id: "3", label: "Multiplication", x: 15, y: 28, description: "Matrix multiplication" },
-  { id: "4", label: "Determinants", x: 38, y: 28, description: "Matrix determinants" },
-  { id: "5", label: "Inverse", x: 26, y: 44, description: "Matrix inverse" },
-  { id: "8", label: "Limits", x: 58, y: 12, description: "Understanding limits" },
-  { id: "9", label: "Derivatives", x: 82, y: 12, description: "Rate of change" },
-  { id: "10", label: "Chain Rule", x: 70, y: 28, description: "Composite derivatives" },
-  { id: "14", label: "Recursion", x: 58, y: 48, description: "Self-referential algorithms" },
-  { id: "15", label: "Trees", x: 82, y: 48, description: "Tree structures" },
-  { id: "16", label: "Traversal", x: 70, y: 64, description: "Tree traversal" },
+  { id: "1", label: "Vectors", x: 18, y: 20, description: "Vector operations" },
+  { id: "2", label: "Matrix Ops", x: 42, y: 20, description: "Basic matrix arithmetic" },
+  { id: "3", label: "Multiplication", x: 18, y: 38, description: "Matrix multiplication" },
+  { id: "4", label: "Determinants", x: 42, y: 38, description: "Matrix determinants" },
+  { id: "5", label: "Inverse", x: 30, y: 55, description: "Matrix inverse" },
+  { id: "8", label: "Limits", x: 62, y: 20, description: "Understanding limits" },
+  { id: "9", label: "Derivatives", x: 82, y: 20, description: "Rate of change" },
+  { id: "10", label: "Chain Rule", x: 72, y: 38, description: "Composite derivatives" },
+  { id: "14", label: "Recursion", x: 62, y: 55, description: "Self-referential algorithms" },
+  { id: "15", label: "Trees", x: 82, y: 55, description: "Tree structures" },
+  { id: "16", label: "Traversal", x: 72, y: 72, description: "Tree traversal" },
 ]
 
 const connections: [string, string][] = [

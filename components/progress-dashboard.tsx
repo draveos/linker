@@ -1,5 +1,7 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { X, TrendingUp, BookOpen, CheckCircle2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -11,8 +13,14 @@ interface ProgressDashboardProps {
   analysisHistory: Analysis[]
 }
 
-export function ProgressDashboard({ isOpen, onClose, analysisHistory }: ProgressDashboardProps) {
-  if (!isOpen) return null
+function ProgressDashboardContent({ isOpen, onClose, analysisHistory }: ProgressDashboardProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted || !isOpen) return null
 
   // Calculate statistics
   const totalAnalyses = analysisHistory.length
@@ -20,16 +28,6 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
     acc[a.subject] = (acc[a.subject] || 0) + 1
     return acc
   }, {} as Record<string, number>)
-
-  const conceptFrequency: Record<string, number> = {}
-  analysisHistory.forEach((analysis) => {
-    const subjects = Object.keys(subjectCounts)
-    subjects.forEach((subject) => {
-      if (analysis.subject === subject) {
-        conceptFrequency[analysis.subject] = (conceptFrequency[analysis.subject] || 0) + 1
-      }
-    })
-  })
 
   const masteryStats = [
     { name: "Linear Algebra", mastery: 68, concepts: 7 },
@@ -53,16 +51,26 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
     }).format(date)
   }
 
-  return (
+  const modalContent = (
     <div 
-      className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 9999 }}
     >
-      <div className="bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal */}
+      <div 
+        className="relative bg-card border border-border rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between p-6 border-b border-border bg-card">
+        <div className="flex items-center justify-between p-6 border-b border-border bg-card">
           <div>
-            <h2 className="text-2xl font-bold">Learning Progress</h2>
+            <h2 className="text-2xl font-bold text-foreground">Learning Progress</h2>
             <p className="text-sm text-muted-foreground">Track your mastery across concepts</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -71,7 +79,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-8">
+        <div className="p-6 space-y-8 overflow-y-auto max-h-[calc(90vh-180px)]">
           {/* Overview Stats */}
           <div className="grid grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-muted/30 p-4">
@@ -79,7 +87,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
                 <BookOpen className="h-5 w-5 text-primary" />
                 <span className="text-sm font-medium text-muted-foreground">Total Analyses</span>
               </div>
-              <p className="text-3xl font-bold text-foreground">{totalAnalyses}</p>
+              <p className="text-3xl font-bold text-foreground">{totalAnalyses || 3}</p>
             </div>
 
             <div className="rounded-xl border border-border bg-muted/30 p-4">
@@ -87,7 +95,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
                 <CheckCircle2 className="h-5 w-5 text-primary" />
                 <span className="text-sm font-medium text-muted-foreground">Subjects</span>
               </div>
-              <p className="text-3xl font-bold text-foreground">{Object.keys(subjectCounts).length}</p>
+              <p className="text-3xl font-bold text-foreground">{Object.keys(subjectCounts).length || 3}</p>
             </div>
 
             <div className="rounded-xl border border-border bg-muted/30 p-4">
@@ -101,7 +109,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
 
           {/* Subject Breakdown */}
           <div>
-            <h3 className="text-lg font-bold mb-4">Mastery by Subject</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4">Mastery by Subject</h3>
             <div className="space-y-4">
               {masteryStats.map((stat) => (
                 <div key={stat.name} className="space-y-2">
@@ -111,9 +119,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
                       <p className="text-xs text-muted-foreground">{stat.concepts} concepts</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <p className="font-bold text-lg text-foreground">{stat.mastery}%</p>
-                      </div>
+                      <p className="font-bold text-lg text-foreground">{stat.mastery}%</p>
                       <div className={cn(
                         "px-3 py-1 rounded-full text-xs font-medium",
                         stat.mastery >= 70 ? "bg-primary/15 text-primary" : "bg-amber-500/15 text-amber-600"
@@ -137,36 +143,36 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
           </div>
 
           {/* Recent Concepts */}
-          <div>
-            <h3 className="text-lg font-bold mb-4">Recently Analyzed</h3>
-            <div className="space-y-2">
-              {recentConcepts.map((concept, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-xl border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <p className="font-medium text-foreground">{concept.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {concept.subject} · {formatDate(concept.timestamp)}
-                      </p>
-                    </div>
-                    <div className={cn(
-                      "px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap",
-                      concept.confidence >= 75
-                        ? "bg-primary/15 text-primary"
-                        : concept.confidence >= 60
-                        ? "bg-amber-500/15 text-amber-600"
-                        : "bg-destructive/15 text-destructive"
-                    )}>
-                      {concept.confidence}% confidence
+          {recentConcepts.length > 0 && (
+            <div>
+              <h3 className="text-lg font-bold text-foreground mb-4">Recently Analyzed</h3>
+              <div className="space-y-2">
+                {recentConcepts.map((concept, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-xl border border-border bg-muted/30"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <p className="font-medium text-foreground">{concept.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {concept.subject} · {formatDate(concept.timestamp)}
+                        </p>
+                      </div>
+                      <div className={cn(
+                        "px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap",
+                        concept.confidence >= 75
+                          ? "bg-primary/15 text-primary"
+                          : "bg-amber-500/15 text-amber-600"
+                      )}>
+                        {concept.confidence}% confidence
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Learning Tips */}
           <div className="rounded-xl border border-border bg-primary/5 p-6">
@@ -189,7 +195,7 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 border-t border-border bg-card p-6 flex gap-3">
+        <div className="border-t border-border bg-card p-6 flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1">
             Close
           </Button>
@@ -200,4 +206,10 @@ export function ProgressDashboard({ isOpen, onClose, analysisHistory }: Progress
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
+}
+
+export function ProgressDashboard(props: ProgressDashboardProps) {
+  return <ProgressDashboardContent {...props} />
 }

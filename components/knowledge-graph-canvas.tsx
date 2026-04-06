@@ -30,26 +30,26 @@ interface GraphNode {
 }
 
 const baseNodes: Omit<GraphNode, "type">[] = [
-  // Linear Algebra - left section (x: 8-35%)
-  { id: "1", label: "Vectors", category: "linear-algebra", x: 12, y: 15, description: "Vector operations and properties" },
-  { id: "2", label: "Matrix Operations", category: "linear-algebra", x: 30, y: 15, description: "Basic matrix arithmetic" },
-  { id: "3", label: "Matrix Multiplication", category: "linear-algebra", x: 12, y: 32, description: "Row-column multiplication" },
-  { id: "4", label: "Determinants", category: "linear-algebra", x: 30, y: 32, description: "Calculating matrix determinants" },
-  { id: "5", label: "Matrix Inverse", category: "linear-algebra", x: 12, y: 50, description: "Finding inverse matrices" },
-  { id: "6", label: "Cofactor Expansion", category: "linear-algebra", x: 30, y: 50, description: "Cofactor method for determinants" },
-  { id: "7", label: "Linear Systems", category: "linear-algebra", x: 21, y: 68, description: "Solving systems of equations" },
-  // Calculus - center section (x: 42-62%)
-  { id: "8", label: "Limits", category: "calculus", x: 48, y: 15, description: "Understanding limits and continuity" },
-  { id: "9", label: "Derivatives", category: "calculus", x: 62, y: 15, description: "Rate of change and slopes" },
-  { id: "10", label: "Chain Rule", category: "calculus", x: 48, y: 35, description: "Derivative of composite functions" },
-  { id: "11", label: "Integration", category: "calculus", x: 62, y: 35, description: "Finding antiderivatives" },
-  { id: "12", label: "Partial Derivatives", category: "calculus", x: 55, y: 55, description: "Multivariable calculus" },
-  // Data Structures - right section (x: 72-90%)
-  { id: "13", label: "Arrays", category: "data-structures", x: 78, y: 15, description: "Linear data storage" },
-  { id: "14", label: "Recursion", category: "data-structures", x: 78, y: 35, description: "Self-referential algorithms" },
-  { id: "15", label: "Trees", category: "data-structures", x: 88, y: 35, description: "Hierarchical data structures" },
-  { id: "16", label: "Tree Traversal", category: "data-structures", x: 88, y: 55, description: "Visiting tree nodes systematically" },
-  { id: "17", label: "Binary Search", category: "data-structures", x: 78, y: 55, description: "Divide and conquer search" },
+  // Linear Algebra - left section
+  { id: "1", label: "Vectors", category: "linear-algebra", x: 15, y: 20, description: "Vector operations and properties" },
+  { id: "2", label: "Matrix Operations", category: "linear-algebra", x: 28, y: 20, description: "Basic matrix arithmetic" },
+  { id: "3", label: "Matrix Multiplication", category: "linear-algebra", x: 15, y: 38, description: "Row-column multiplication" },
+  { id: "4", label: "Determinants", category: "linear-algebra", x: 28, y: 38, description: "Calculating matrix determinants" },
+  { id: "5", label: "Matrix Inverse", category: "linear-algebra", x: 15, y: 56, description: "Finding inverse matrices" },
+  { id: "6", label: "Cofactor Expansion", category: "linear-algebra", x: 28, y: 56, description: "Cofactor method for determinants" },
+  { id: "7", label: "Linear Systems", category: "linear-algebra", x: 21, y: 74, description: "Solving systems of equations" },
+  // Calculus - center section
+  { id: "8", label: "Limits", category: "calculus", x: 45, y: 20, description: "Understanding limits and continuity" },
+  { id: "9", label: "Derivatives", category: "calculus", x: 58, y: 20, description: "Rate of change and slopes" },
+  { id: "10", label: "Chain Rule", category: "calculus", x: 45, y: 40, description: "Derivative of composite functions" },
+  { id: "11", label: "Integration", category: "calculus", x: 58, y: 40, description: "Finding antiderivatives" },
+  { id: "12", label: "Partial Derivatives", category: "calculus", x: 51, y: 60, description: "Multivariable calculus" },
+  // Data Structures - right section
+  { id: "13", label: "Arrays", category: "data-structures", x: 75, y: 20, description: "Linear data storage" },
+  { id: "14", label: "Recursion", category: "data-structures", x: 75, y: 40, description: "Self-referential algorithms" },
+  { id: "15", label: "Trees", category: "data-structures", x: 88, y: 40, description: "Hierarchical data structures" },
+  { id: "16", label: "Tree Traversal", category: "data-structures", x: 88, y: 60, description: "Visiting tree nodes systematically" },
+  { id: "17", label: "Binary Search", category: "data-structures", x: 75, y: 60, description: "Divide and conquer search" },
 ]
 
 const connections: [string, string][] = [
@@ -235,10 +235,10 @@ export function KnowledgeGraphCanvas({
 
       {/* Canvas Area */}
       <div
-        className="absolute inset-0 flex items-center justify-center transition-all duration-300 ease-out"
+        className="absolute inset-0 transition-all duration-300 ease-out origin-center"
         style={{ transform: `scale(${zoom})` }}
       >
-        <div className="relative w-full h-full">
+        <div className="absolute inset-0">
           {/* SVG Connections */}
           <svg 
             ref={svgRef}
