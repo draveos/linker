@@ -11,7 +11,7 @@ export interface Analysis {
   id: string
   title: string
   subject: string
-  timestamp: Date
+  timestamp: string
   rootCauseNodeId?: string
 }
 
@@ -35,18 +35,6 @@ export function LeftSidebar({
   onSelectAnalysis,
 }: LeftSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
-
-  const formatTime = (date: Date) => {
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const minutes = Math.floor(diff / 60000)
-    const hours = Math.floor(diff / 3600000)
-    const days = Math.floor(diff / 86400000)
-
-    if (minutes < 60) return `${minutes}분 전`
-    if (hours < 24) return `${hours}시간 전`
-    return `${days}일 전`
-  }
 
   return (
     <>
@@ -156,7 +144,7 @@ export function LeftSidebar({
                         {analysis.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {analysis.subject} · {formatTime(analysis.timestamp)}
+                        {analysis.subject} · {analysis.timestamp}
                       </p>
                     </div>
                   </div>

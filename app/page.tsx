@@ -18,14 +18,14 @@ export default function LinkerPage() {
       id: "1",
       title: "역행렬 계산 오류",
       subject: "선형대수학",
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
+      timestamp: "30분 전",
       rootCauseNodeId: "4",
     },
     {
       id: "2",
       title: "행렬식 부호 실수",
       subject: "선형대수학",
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
+      timestamp: "2시간 전",
       rootCauseNodeId: "4",
     },
   ])
@@ -85,7 +85,7 @@ export default function LinkerPage() {
               id: Date.now().toString(),
               title,
               subject: "선형대수학",
-              timestamp: new Date(),
+              timestamp: "방금 전",
               rootCauseNodeId: rootCauseId,
             }
             setRecentAnalyses((prev) => [newAnalysis, ...prev.slice(0, 4)])
