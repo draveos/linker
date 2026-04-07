@@ -332,6 +332,7 @@ export function KnowledgeGraphCanvas({
             description: node.description,
             isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
             isFiltered,
+            _editMode: false,
           },
           selected: node.id === selectedNodeId,
           draggable: false,
@@ -358,6 +359,7 @@ export function KnowledgeGraphCanvas({
           target: node.id,
           // 항상 deletable 고정 — Context가 editMode에 따라 버튼 표시 여부를 결정
           type: "deletable",
+          data: { _editMode: false },
           ...buildEdgeStyle(isPath, filterType, isAnalyzing),
         })
       })
@@ -421,12 +423,24 @@ export function KnowledgeGraphCanvas({
     setNodes((nds) => nds.map((n) => ({ ...n, draggable: true })))
   }, [editMode, setNodes])
 
+  // ── ReactFlow memoize 무력화 — editMode 바뀔 때 data에 트리거 주입 ──
+  // Context만으론 ReactFlow가 edge/node를 리렌더하지 않아서 필요
+
+  useEffect(() => {
+    setEdges((eds) =>
+      eds.map((e) => ({ ...e, data: { ...e.data, _editMode: editMode } }))
+    )
+    setNodes((nds) =>
+      nds.map((n) => ({ ...n, data: { ...n.data, _editMode: editMode } }))
+    )
+  }, [editMode, setEdges, setNodes])
+
   // ── 엣지 연결 ────────────────────────────────────────────
 
   const onConnect = useCallback(
     (params: Connection) => {
       if (!editMode) return
-      setEdges((eds) => addEdge({ ...params, type: "deletable" }, eds))
+      setEdges((eds) => addEdge({ ...params, type: "deletable", data: { _editMode: editMode } }, eds))
     },
     [editMode, setEdges]
   )
@@ -496,6 +510,7 @@ export function KnowledgeGraphCanvas({
           nodeType: "standard",
           description: "새로운 개념",
           isFiltered: false,
+          _editMode: editMode,
         },
         draggable: true,
       },
