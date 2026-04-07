@@ -213,16 +213,19 @@ export function KnowledgeGraphCanvas({
 
   // 엣지 삭제 요청 - 연결된 엣지만 삭제 가능
   const handleDeleteEdge = useCallback((edgeId: string) => {
-    // 엣지가 실제로 존재하는지 확인
-    const edgeExists = edges.some((e) => e.id === edgeId)
-    if (!edgeExists) return
-
+    // React Flow 인스턴스에서 현재 엣지 목록 확인
+    // (의존성 배열 순환 참조 방지를 위해 직접 state 체크하지 않음)
+    
     if (skipDeleteConfirm) {
-      setEdges((eds) => eds.filter((e) => e.id !== edgeId))
+      setEdges((eds) => {
+        // 엣지가 실제로 존재하는지 확인 후 삭제
+        const edgeExists = eds.some((e) => e.id === edgeId)
+        return edgeExists ? eds.filter((e) => e.id !== edgeId) : eds
+      })
     } else {
       setDeleteConfirm({ type: "edge", id: edgeId, name: "연결선" })
     }
-  }, [edges, skipDeleteConfirm])
+  }, [skipDeleteConfirm])
 
   // Generate nodes
   const initialNodes: Node[] = useMemo(() => {
