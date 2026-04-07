@@ -17,9 +17,15 @@ import ReactFlow, {
   type NodeProps,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle } from "lucide-react"
+import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+
+// 삭제 확인 팝업 상태
+interface DeleteConfirmState {
+  nodeId: string | null
+  nodeName: string
+}
 
 // Types
 export interface KnowledgeNode {
@@ -76,32 +82,47 @@ const nodePositions: Record<string, { x: number; y: number }> = {
 }
 
 // Custom Node Component
-function ConceptNode({ data, selected }: NodeProps) {
-  const { label, nodeType, isAnalyzing, isFiltered, editMode } = data
+function ConceptNode({ data, selected, id }: NodeProps) {
+  const { label, nodeType, isAnalyzing, isFiltered, editMode, onDelete } = data
 
   return (
-    <div
-      className={cn(
-        "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
-        nodeType === "mastered" && "bg-primary text-primary-foreground border-primary shadow-primary/25",
-        nodeType === "standard" && "bg-card text-card-foreground border-border hover:border-primary/50",
-        nodeType === "missing" && "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
-        nodeType === "missing" && isAnalyzing && "animate-pulse",
-        selected && "ring-2 ring-ring ring-offset-2",
-        isFiltered && "opacity-20",
-        editMode && "cursor-grab active:cursor-grabbing"
+    <div className="relative group">
+      {/* 삭제 버튼 (수정 모드에서만 표시) */}
+      {editMode && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete?.(id, label)
+          }}
+          className="absolute -top-2 -right-2 w-5 h-5 bg-destructive hover:bg-destructive/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md"
+        >
+          <X className="h-3 w-3" />
+        </button>
       )}
-    >
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
+      
+      <div
+        className={cn(
+          "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
+          nodeType === "mastered" && "bg-primary text-primary-foreground border-primary shadow-primary/25",
+          nodeType === "standard" && "bg-card text-card-foreground border-border hover:border-primary/50",
+          nodeType === "missing" && "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
+          nodeType === "missing" && isAnalyzing && "animate-pulse",
+          selected && "ring-2 ring-ring ring-offset-2",
+          isFiltered && "opacity-20",
+          editMode && "cursor-grab active:cursor-grabbing"
+        )}
+      >
+        <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
 
-      <div className="flex items-center justify-center gap-2">
-        {nodeType === "mastered" && <Check className="h-4 w-4" />}
-        {nodeType === "missing" && <AlertTriangle className="h-4 w-4" />}
-        {nodeType === "standard" && <Circle className="h-3 w-3 opacity-50" />}
-        <span className="font-medium text-sm">{label}</span>
+        <div className="flex items-center justify-center gap-2">
+          {nodeType === "mastered" && <Check className="h-4 w-4" />}
+          {nodeType === "missing" && <AlertTriangle className="h-4 w-4" />}
+          {nodeType === "standard" && <Circle className="h-3 w-3 opacity-50" />}
+          <span className="font-medium text-sm">{label}</span>
+        </div>
+
+        <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
       </div>
-
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
     </div>
   )
 }
@@ -120,33 +141,38 @@ export function KnowledgeGraphCanvas({
   const [savedEdges, setSavedEdges] = useState<Edge[] | null>(null)
   const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
   const [showAiSuggestion, setShowAiSuggestion] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({ nodeId: null, nodeName: "" })
+  const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
 
-  // Generate nodes
+  // Generate nodes - editMode 변경 시에도 위치 유지를 위해 분리
+  const generateNodeData = useCallback((node: KnowledgeNode, currentEditMode: boolean) => {
+    let nodeType: "standard" | "mastered" | "missing" = "standard"
+    if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
+    else if (node.id === activeRootCauseId) nodeType = "missing"
+
+    const isFiltered = filterType !== "all" && filterType !== nodeType
+
+    return {
+      label: node.label,
+      nodeType,
+      description: node.description,
+      isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
+      isFiltered,
+      editMode: currentEditMode,
+      onDelete: requestDeleteNode,
+    }
+  }, [activeRootCauseId, isAnalyzing, filterType])
+
   const initialNodes: Node[] = useMemo(() => {
-    return knowledgeNodes.map((node) => {
-      let nodeType: "standard" | "mastered" | "missing" = "standard"
-      if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
-      else if (node.id === activeRootCauseId) nodeType = "missing"
-
-      const isFiltered = filterType !== "all" && filterType !== nodeType
-
-      return {
-        id: node.id,
-        type: "concept",
-        position: nodePositions[node.id] || { x: 0, y: 0 },
-        data: {
-          label: node.label,
-          nodeType,
-          description: node.description,
-          isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
-          isFiltered,
-          editMode,
-        },
-        selected: node.id === selectedNodeId,
-        draggable: editMode,
-      }
-    })
-  }, [activeRootCauseId, selectedNodeId, isAnalyzing, filterType, editMode])
+    return knowledgeNodes.map((node) => ({
+      id: node.id,
+      type: "concept",
+      position: nodePositions[node.id] || { x: 0, y: 0 },
+      data: generateNodeData(node, editMode),
+      selected: node.id === selectedNodeId,
+      draggable: editMode,
+    }))
+  }, [generateNodeData, selectedNodeId, editMode])
 
   // Generate edges
   const initialEdges: Edge[] = useMemo(() => {
@@ -182,13 +208,27 @@ export function KnowledgeGraphCanvas({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  // Update when activeRootCauseId or filter changes
+  // Update nodes data (not position) when filter/root cause changes
   useEffect(() => {
     if (!editMode) {
       setNodes(initialNodes)
       setEdges(initialEdges)
+    } else {
+      // 수정 모드에서는 data만 업데이트 (위치는 유지)
+      setNodes((nds) =>
+        nds.map((n) => {
+          const kNode = knowledgeNodes.find((k) => k.id === n.id)
+          if (kNode) {
+            return {
+              ...n,
+              data: generateNodeData(kNode, true),
+            }
+          }
+          return n
+        })
+      )
     }
-  }, [initialNodes, initialEdges, setNodes, setEdges, editMode])
+  }, [activeRootCauseId, filterType, isAnalyzing, editMode, setNodes, setEdges, initialNodes, initialEdges, generateNodeData])
 
   // Handle edge connections in edit mode
   const onConnect = useCallback(
@@ -264,6 +304,27 @@ export function KnowledgeGraphCanvas({
       draggable: true,
     }
     setNodes((nds) => [...nds, newNode])
+  }
+
+  // 노드 삭제 요청
+  const requestDeleteNode = (nodeId: string, nodeName: string) => {
+    if (skipDeleteConfirm) {
+      confirmDeleteNode(nodeId)
+    } else {
+      setDeleteConfirm({ nodeId, nodeName })
+    }
+  }
+
+  // 노드 삭제 확정
+  const confirmDeleteNode = (nodeId: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+    setDeleteConfirm({ nodeId: null, nodeName: "" })
+  }
+
+  // 삭제 취소
+  const cancelDelete = () => {
+    setDeleteConfirm({ nodeId: null, nodeName: "" })
   }
 
   // AI 정리 요청
@@ -446,6 +507,49 @@ export function KnowledgeGraphCanvas({
                   </Button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Popup */}
+      {deleteConfirm.nodeId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-destructive/10 rounded-full">
+                <Trash2 className="h-5 w-5 text-destructive" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground">노드 삭제</h3>
+            </div>
+            
+            <p className="text-sm text-muted-foreground mb-4">
+              <strong className="text-foreground">{deleteConfirm.nodeName}</strong> 노드를 정말로 삭제하시겠습니까?
+              <br />
+              <span className="text-xs">연결된 모든 엣지도 함께 삭제됩니다.</span>
+            </p>
+
+            <label className="flex items-center gap-2 mb-5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={skipDeleteConfirm}
+                onChange={(e) => setSkipDeleteConfirm(e.target.checked)}
+                className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <span className="text-xs text-muted-foreground">오늘은 다시 묻지 않기</span>
+            </label>
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="ghost" size="sm" onClick={cancelDelete}>
+                취소
+              </Button>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={() => confirmDeleteNode(deleteConfirm.nodeId!)}
+              >
+                삭제
+              </Button>
             </div>
           </div>
         </div>
