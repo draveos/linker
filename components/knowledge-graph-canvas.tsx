@@ -1,6 +1,3 @@
-Knowledgegraphcanvas · TSX
-Copy
-
 "use client"
 
 import { useCallback, useMemo, useEffect, useState, useRef } from "react"
