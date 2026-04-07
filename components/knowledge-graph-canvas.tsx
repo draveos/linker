@@ -319,12 +319,12 @@ export function KnowledgeGraphCanvas({
     setDeleteConfirm({ nodeId: null, nodeName: "" })
   }, [setNodes, setEdges])
 
-  // skipDeleteConfirm이 true일 때 자동 삭제
-  useEffect(() => {
-    if (deleteConfirm.nodeId && skipDeleteConfirm) {
+  // 삭제 실행 (확인 버튼 눌렀을 때만 호출)
+  const executeDelete = () => {
+    if (deleteConfirm.nodeId) {
       confirmDeleteNode(deleteConfirm.nodeId)
     }
-  }, [deleteConfirm.nodeId, skipDeleteConfirm, confirmDeleteNode])
+  }
 
   // 삭제 취소
   const cancelDelete = () => {
@@ -369,6 +369,10 @@ export function KnowledgeGraphCanvas({
           nodesDraggable={editMode}
           nodesConnectable={editMode}
           elementsSelectable={!editMode}
+          panOnDrag={!editMode}
+          zoomOnScroll={!editMode}
+          zoomOnPinch={!editMode}
+          zoomOnDoubleClick={!editMode}
         >
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
           <Controls
@@ -550,7 +554,7 @@ export function KnowledgeGraphCanvas({
               <Button 
                 variant="destructive" 
                 size="sm" 
-                onClick={() => confirmDeleteNode(deleteConfirm.nodeId!)}
+                onClick={executeDelete}
               >
                 삭제
               </Button>
