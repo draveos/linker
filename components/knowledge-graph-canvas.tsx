@@ -15,6 +15,9 @@ import ReactFlow, {
   addEdge,
   Connection,
   type NodeProps,
+  type EdgeProps,
+  getBezierPath,
+  BaseEdge,
 } from "reactflow"
 import "reactflow/dist/style.css"
 import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2 } from "lucide-react"
@@ -23,8 +26,9 @@ import { Button } from "@/components/ui/button"
 
 // 삭제 확인 팝업 상태
 interface DeleteConfirmState {
-  nodeId: string | null
-  nodeName: string
+  type: "node" | "edge" | null
+  id: string | null
+  name: string
 }
 
 // Types
@@ -109,7 +113,7 @@ function ConceptNode({ data, selected, id }: NodeProps) {
           nodeType === "missing" && isAnalyzing && "animate-pulse",
           selected && "ring-2 ring-ring ring-offset-2",
           isFiltered && "opacity-20",
-          editMode && "cursor-grab active:cursor-grabbing"
+          editMode && "cursor-move"
         )}
       >
         <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
@@ -127,7 +131,59 @@ function ConceptNode({ data, selected, id }: NodeProps) {
   )
 }
 
+// Custom Edge with delete button
+function DeletableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  markerEnd,
+  data,
+}: EdgeProps) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  })
+
+  const { editMode, onDeleteEdge } = data || {}
+
+  return (
+    <>
+      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      {editMode && (
+        <foreignObject
+          width={20}
+          height={20}
+          x={labelX - 10}
+          y={labelY - 10}
+          className="overflow-visible"
+          requiredExtensions="http://www.w3.org/1999/xhtml"
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onDeleteEdge?.(id)
+            }}
+            className="w-5 h-5 bg-destructive hover:bg-destructive/80 text-white rounded-full flex items-center justify-center shadow-md opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </foreignObject>
+      )}
+    </>
+  )
+}
+
 const nodeTypes = { concept: ConceptNode } as const
+const edgeTypes = { deletable: DeletableEdge } as const
 
 export function KnowledgeGraphCanvas({
   onNodeClick,
@@ -141,44 +197,56 @@ export function KnowledgeGraphCanvas({
   const [savedEdges, setSavedEdges] = useState<Edge[] | null>(null)
   const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
   const [showAiSuggestion, setShowAiSuggestion] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({ nodeId: null, nodeName: "" })
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({ type: null, id: null, name: "" })
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
 
-  // 노드 삭제 요청 함수 (generateNodeData보다 먼저 정의)
-  // skipDeleteConfirm일 때도 먼저 confirm state로 설정 후 useEffect에서 처리
-  const requestDeleteNode = useCallback((nodeId: string, nodeName: string) => {
-    setDeleteConfirm({ nodeId, nodeName })
-  }, [])
-
-  // Generate nodes - editMode 변경 시에도 위치 유지를 위해 분리
-  const generateNodeData = useCallback((node: KnowledgeNode, currentEditMode: boolean) => {
-    let nodeType: "standard" | "mastered" | "missing" = "standard"
-    if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
-    else if (node.id === activeRootCauseId) nodeType = "missing"
-
-    const isFiltered = filterType !== "all" && filterType !== nodeType
-
-    return {
-      label: node.label,
-      nodeType,
-      description: node.description,
-      isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
-      isFiltered,
-      editMode: currentEditMode,
-      onDelete: requestDeleteNode,
+  // 노드 삭제 요청
+  const handleDeleteNode = useCallback((nodeId: string, nodeName: string) => {
+    if (skipDeleteConfirm) {
+      // 바로 삭제
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+    } else {
+      setDeleteConfirm({ type: "node", id: nodeId, name: nodeName })
     }
-  }, [activeRootCauseId, isAnalyzing, filterType, requestDeleteNode])
+  }, [skipDeleteConfirm])
 
+  // 엣지 삭제 요청
+  const handleDeleteEdge = useCallback((edgeId: string) => {
+    if (skipDeleteConfirm) {
+      setEdges((eds) => eds.filter((e) => e.id !== edgeId))
+    } else {
+      setDeleteConfirm({ type: "edge", id: edgeId, name: "연결선" })
+    }
+  }, [skipDeleteConfirm])
+
+  // Generate nodes
   const initialNodes: Node[] = useMemo(() => {
-    return knowledgeNodes.map((node) => ({
-      id: node.id,
-      type: "concept",
-      position: nodePositions[node.id] || { x: 0, y: 0 },
-      data: generateNodeData(node, editMode),
-      selected: node.id === selectedNodeId,
-      draggable: editMode,
-    }))
-  }, [generateNodeData, selectedNodeId, editMode])
+    return knowledgeNodes.map((node) => {
+      let nodeType: "standard" | "mastered" | "missing" = "standard"
+      if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
+      else if (node.id === activeRootCauseId) nodeType = "missing"
+
+      const isFiltered = filterType !== "all" && filterType !== nodeType
+
+      return {
+        id: node.id,
+        type: "concept",
+        position: nodePositions[node.id] || { x: 0, y: 0 },
+        data: {
+          label: node.label,
+          nodeType,
+          description: node.description,
+          isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
+          isFiltered,
+          editMode,
+          onDelete: handleDeleteNode,
+        },
+        selected: node.id === selectedNodeId,
+        draggable: editMode,
+      }
+    })
+  }, [activeRootCauseId, selectedNodeId, isAnalyzing, filterType, editMode, handleDeleteNode])
 
   // Generate edges
   const initialEdges: Edge[] = useMemo(() => {
@@ -192,8 +260,12 @@ export function KnowledgeGraphCanvas({
           id: `${prereqId}-${node.id}`,
           source: prereqId,
           target: node.id,
-          type: "smoothstep",
+          type: editMode ? "deletable" : "smoothstep",
           animated: isAnalyzing && isPathToRootCause,
+          data: {
+            editMode,
+            onDeleteEdge: handleDeleteEdge,
+          },
           style: {
             stroke: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--border))",
             strokeWidth: isPathToRootCause ? 2.5 : 1.5,
@@ -209,41 +281,59 @@ export function KnowledgeGraphCanvas({
       })
     })
     return edges
-  }, [activeRootCauseId, isAnalyzing, filterType])
+  }, [activeRootCauseId, isAnalyzing, filterType, editMode, handleDeleteEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  // Update nodes data (not position) when filter/root cause changes
+  // Update nodes when not in edit mode
   useEffect(() => {
     if (!editMode) {
       setNodes(initialNodes)
       setEdges(initialEdges)
-    } else {
-      // 수정 모드에서는 data만 업데이트 (위치는 유지)
+    }
+  }, [editMode, initialNodes, initialEdges, setNodes, setEdges])
+
+  // Update node data when editMode changes (keep positions)
+  useEffect(() => {
+    if (editMode) {
       setNodes((nds) =>
-        nds.map((n) => {
-          const kNode = knowledgeNodes.find((k) => k.id === n.id)
-          if (kNode) {
-            return {
-              ...n,
-              data: generateNodeData(kNode, true),
-            }
-          }
-          return n
-        })
+        nds.map((n) => ({
+          ...n,
+          draggable: true,
+          data: {
+            ...n.data,
+            editMode: true,
+            onDelete: handleDeleteNode,
+          },
+        }))
+      )
+      setEdges((eds) =>
+        eds.map((e) => ({
+          ...e,
+          type: "deletable",
+          data: {
+            ...e.data,
+            editMode: true,
+            onDeleteEdge: handleDeleteEdge,
+          },
+        }))
       )
     }
-  }, [activeRootCauseId, filterType, isAnalyzing, editMode, setNodes, setEdges, initialNodes, initialEdges, generateNodeData])
+  }, [editMode, handleDeleteNode, handleDeleteEdge, setNodes, setEdges])
 
   // Handle edge connections in edit mode
   const onConnect = useCallback(
     (params: Connection) => {
       if (editMode) {
-        setEdges((eds) => addEdge({ ...params, type: "smoothstep" }, eds))
+        setEdges((eds) => addEdge({ 
+          ...params, 
+          type: "deletable",
+          data: { editMode: true, onDeleteEdge: handleDeleteEdge }
+        }, eds))
       }
     },
-    [editMode, setEdges]
+    [editMode, setEdges, handleDeleteEdge]
   )
 
   const handleNodeClick = useCallback(
@@ -306,29 +396,29 @@ export function KnowledgeGraphCanvas({
         description: "새로운 개념",
         isFiltered: false,
         editMode: true,
+        onDelete: handleDeleteNode,
       },
       draggable: true,
     }
     setNodes((nds) => [...nds, newNode])
   }
 
-  // 노드 삭제 확정
-  const confirmDeleteNode = useCallback((nodeId: string) => {
-    setNodes((nds) => nds.filter((n) => n.id !== nodeId))
-    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-    setDeleteConfirm({ nodeId: null, nodeName: "" })
-  }, [setNodes, setEdges])
-
-  // 삭제 실행 (확인 버튼 눌렀을 때만 호출)
+  // 삭제 확정
   const executeDelete = () => {
-    if (deleteConfirm.nodeId) {
-      confirmDeleteNode(deleteConfirm.nodeId)
+    if (deleteConfirm.id) {
+      if (deleteConfirm.type === "node") {
+        setNodes((nds) => nds.filter((n) => n.id !== deleteConfirm.id))
+        setEdges((eds) => eds.filter((e) => e.source !== deleteConfirm.id && e.target !== deleteConfirm.id))
+      } else if (deleteConfirm.type === "edge") {
+        setEdges((eds) => eds.filter((e) => e.id !== deleteConfirm.id))
+      }
     }
+    setDeleteConfirm({ type: null, id: null, name: "" })
   }
 
   // 삭제 취소
   const cancelDelete = () => {
-    setDeleteConfirm({ nodeId: null, nodeName: "" })
+    setDeleteConfirm({ type: null, id: null, name: "" })
   }
 
   // AI 정리 요청
@@ -355,11 +445,12 @@ export function KnowledgeGraphCanvas({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={editMode ? onNodesChange : undefined}
-          onEdgesChange={editMode ? onEdgesChange : undefined}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           minZoom={0.5}
@@ -368,11 +459,12 @@ export function KnowledgeGraphCanvas({
           proOptions={{ hideAttribution: true }}
           nodesDraggable={editMode}
           nodesConnectable={editMode}
-          elementsSelectable={!editMode}
+          elementsSelectable={editMode}
           panOnDrag={!editMode}
-          zoomOnScroll={!editMode}
-          zoomOnPinch={!editMode}
-          zoomOnDoubleClick={!editMode}
+          zoomOnScroll={true}
+          zoomOnPinch={true}
+          zoomOnDoubleClick={false}
+          selectNodesOnDrag={false}
         >
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
           <Controls
@@ -427,7 +519,7 @@ export function KnowledgeGraphCanvas({
         </div>
 
         {editMode ? (
-          <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-2 shadow-lg flex gap-2">
+          <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-2 shadow-lg flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={addNewNode}>
               <Plus className="h-4 w-4 mr-1" />
               노드 추가
@@ -521,28 +613,34 @@ export function KnowledgeGraphCanvas({
       )}
 
       {/* Delete Confirmation Popup */}
-      {deleteConfirm.nodeId && (
+      {deleteConfirm.id && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-destructive/10 rounded-full">
                 <Trash2 className="h-5 w-5 text-destructive" />
               </div>
-              <h3 className="text-lg font-semibold text-foreground">노드 삭제</h3>
+              <h3 className="text-lg font-semibold text-foreground">
+                {deleteConfirm.type === "node" ? "노드 삭제" : "연결선 삭제"}
+              </h3>
             </div>
             
             <p className="text-sm text-muted-foreground mb-4">
-              <strong className="text-foreground">{deleteConfirm.nodeName}</strong> 노드를 정말로 삭제하시겠습니까?
-              <br />
-              <span className="text-xs">연결된 모든 엣지도 함께 삭제됩니다.</span>
+              <strong className="text-foreground">{deleteConfirm.name}</strong>을(를) 정말로 삭제하시겠습니까?
+              {deleteConfirm.type === "node" && (
+                <>
+                  <br />
+                  <span className="text-xs">연결된 모든 엣지도 함께 삭제됩니다.</span>
+                </>
+              )}
             </p>
 
-            <label className="flex items-center gap-2 mb-5 cursor-pointer">
+            <label className="flex items-center gap-2 mb-5 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={skipDeleteConfirm}
                 onChange={(e) => setSkipDeleteConfirm(e.target.checked)}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                className="w-4 h-4 rounded border-border text-primary focus:ring-primary accent-primary"
               />
               <span className="text-xs text-muted-foreground">오늘은 다시 묻지 않기</span>
             </label>
