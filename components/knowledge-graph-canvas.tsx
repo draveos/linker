@@ -1,6 +1,9 @@
+Knowledgegraphcanvas · TSX
+Copy
+
 "use client"
 
-import { useCallback, useMemo, useEffect, useState } from "react"
+import { useCallback, useMemo, useEffect, useState, useRef } from "react"
 import ReactFlow, {
   Node,
   Edge,
@@ -24,14 +27,10 @@ import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, Messag
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
-// 삭제 확인 팝업 상태
-interface DeleteConfirmState {
-  type: "node" | "edge" | null
-  id: string | null
-  name: string
-}
-
+// ─────────────────────────────────────────────────────────────
 // Types
+// ─────────────────────────────────────────────────────────────
+
 export interface KnowledgeNode {
   id: string
   label: string
@@ -54,7 +53,16 @@ interface KnowledgeGraphCanvasProps {
   analysisStep?: number
 }
 
-// 기초 선형대수학 개념
+interface DeleteConfirmState {
+  type: "node" | "edge" | null
+  id: string | null
+  name: string
+}
+
+// ─────────────────────────────────────────────────────────────
+// Static Data  (추후: props나 API 응답으로 교체 예정)
+// ─────────────────────────────────────────────────────────────
+
 const knowledgeNodes: KnowledgeNode[] = [
   { id: "1", label: "벡터", description: "벡터의 기본 개념과 연산", prerequisites: [] },
   { id: "2", label: "행렬", description: "행렬의 정의와 기본 연산", prerequisites: ["1"] },
@@ -68,10 +76,8 @@ const knowledgeNodes: KnowledgeNode[] = [
   { id: "10", label: "대각화", description: "행렬의 대각화", prerequisites: ["9"] },
 ]
 
-// 완료된 개념 (파란색)
 const masteredNodeIds = ["1", "2", "3"]
 
-// 노드 위치
 const nodePositions: Record<string, { x: number; y: number }> = {
   "1": { x: 400, y: 50 },
   "2": { x: 400, y: 130 },
@@ -85,13 +91,51 @@ const nodePositions: Record<string, { x: number; y: number }> = {
   "10": { x: 520, y: 450 },
 }
 
-// Custom Node Component
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+function resolveNodeType(
+  nodeId: string,
+  activeRootCauseId?: string | null
+): "standard" | "mastered" | "missing" {
+  if (masteredNodeIds.includes(nodeId)) return "mastered"
+  if (nodeId === activeRootCauseId) return "missing"
+  return "standard"
+}
+
+function buildEdgeStyle(
+  isPathToRootCause: boolean,
+  filterType: string,
+  isAnalyzing?: boolean
+) {
+  return {
+    style: {
+      stroke: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--border))",
+      strokeWidth: isPathToRootCause ? 2.5 : 1.5,
+      opacity: filterType !== "all" ? 0.3 : 1,
+    },
+    animated: !!(isAnalyzing && isPathToRootCause),
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: isPathToRootCause
+        ? "hsl(var(--destructive))"
+        : "hsl(var(--muted-foreground))",
+      width: 16,
+      height: 16,
+    },
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Custom Node
+// ─────────────────────────────────────────────────────────────
+
 function ConceptNode({ data, selected, id }: NodeProps) {
   const { label, nodeType, isAnalyzing, isFiltered, editMode, onDelete } = data
 
   return (
     <div className="relative group">
-      {/* 삭제 버튼 (수정 모드에서만 표시) */}
       {editMode && (
         <button
           onClick={(e) => {
@@ -103,35 +147,47 @@ function ConceptNode({ data, selected, id }: NodeProps) {
           <X className="h-3 w-3" />
         </button>
       )}
-      
+
       <div
         className={cn(
           "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
-          nodeType === "mastered" && "bg-primary text-primary-foreground border-primary shadow-primary/25",
-          nodeType === "standard" && "bg-card text-card-foreground border-border hover:border-primary/50",
-          nodeType === "missing" && "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
+          nodeType === "mastered" &&
+          "bg-primary text-primary-foreground border-primary shadow-primary/25",
+          nodeType === "standard" &&
+          "bg-card text-card-foreground border-border hover:border-primary/50",
+          nodeType === "missing" &&
+          "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
           nodeType === "missing" && isAnalyzing && "animate-pulse",
           selected && "ring-2 ring-ring ring-offset-2",
           isFiltered && "opacity-20",
           editMode && "cursor-move"
         )}
       >
-        <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
-
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!bg-muted-foreground !w-2 !h-2 !border-0"
+        />
         <div className="flex items-center justify-center gap-2">
           {nodeType === "mastered" && <Check className="h-4 w-4" />}
           {nodeType === "missing" && <AlertTriangle className="h-4 w-4" />}
           {nodeType === "standard" && <Circle className="h-3 w-3 opacity-50" />}
           <span className="font-medium text-sm">{label}</span>
         </div>
-
-        <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!bg-muted-foreground !w-2 !h-2 !border-0"
+        />
       </div>
     </div>
   )
 }
 
-// Custom Edge with delete button
+// ─────────────────────────────────────────────────────────────
+// Custom Edge — X 버튼은 editMode && 실제 엣지 존재 시에만 렌더
+// ─────────────────────────────────────────────────────────────
+
 function DeletableEdge({
   id,
   sourceX,
@@ -153,12 +209,14 @@ function DeletableEdge({
     targetPosition,
   })
 
-  const { editMode, onDeleteEdge, isDeletable } = data || {}
+  const { editMode, onDeleteEdge } = data || {}
 
   return (
     <>
       <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
-      {editMode && isDeletable && (
+      {/* [Fix 1] editMode가 true일 때만 X 버튼을 렌더 — isDeletable 플래그 제거,
+          엣지 컴포넌트 자체가 존재한다는 것이 이미 "삭제 가능함"을 의미 */}
+      {editMode && (
         <foreignObject
           width={20}
           height={20}
@@ -182,8 +240,16 @@ function DeletableEdge({
   )
 }
 
+// ─────────────────────────────────────────────────────────────
+// Node / Edge type maps  (컴포넌트 외부에 선언 → 리렌더 시 재생성 방지)
+// ─────────────────────────────────────────────────────────────
+
 const nodeTypes = { concept: ConceptNode } as const
 const edgeTypes = { deletable: DeletableEdge } as const
+
+// ─────────────────────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────────────────────
 
 export function KnowledgeGraphCanvas({
   onNodeClick,
@@ -193,229 +259,259 @@ export function KnowledgeGraphCanvas({
   analysisStep,
 }: KnowledgeGraphCanvasProps) {
   const [editMode, setEditMode] = useState(false)
-  const [savedNodes, setSavedNodes] = useState<Node[] | null>(null)
-  const [savedEdges, setSavedEdges] = useState<Edge[] | null>(null)
   const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
   const [showAiSuggestion, setShowAiSuggestion] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({ type: null, id: null, name: "" })
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({
+    type: null,
+    id: null,
+    name: "",
+  })
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
 
-  // 노드 삭제 요청
-  const handleDeleteNode = useCallback((nodeId: string, nodeName: string) => {
-    if (skipDeleteConfirm) {
-      // 바로 삭제
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
-      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
-    } else {
-      setDeleteConfirm({ type: "node", id: nodeId, name: nodeName })
-    }
-  }, [skipDeleteConfirm])
+  // [Fix 2] 저장 전 스냅샷을 ref로 보관 — state로 두면 불필요한 리렌더 유발
+  const snapshotRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null)
 
-  // 엣지 삭제 요청 - 연결된 엣지만 삭제 가능
-  const handleDeleteEdge = useCallback((edgeId: string) => {
-    // React Flow 인스턴스에서 현재 엣지 목록 확인
-    // (의존성 배열 순환 참조 방지를 위해 직접 state 체크하지 않음)
-    
-    if (skipDeleteConfirm) {
-      setEdges((eds) => {
-        // 엣지가 실제로 존재하는지 확인 후 삭제
-        const edgeExists = eds.some((e) => e.id === edgeId)
-        return edgeExists ? eds.filter((e) => e.id !== edgeId) : eds
-      })
-    } else {
-      setDeleteConfirm({ type: "edge", id: edgeId, name: "연결선" })
-    }
-  }, [skipDeleteConfirm])
+  // ── 핸들러: 노드 삭제 요청 ─────────────────────────────────
 
-  // Generate nodes
-  const initialNodes: Node[] = useMemo(() => {
-    return knowledgeNodes.map((node) => {
-      let nodeType: "standard" | "mastered" | "missing" = "standard"
-      if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
-      else if (node.id === activeRootCauseId) nodeType = "missing"
-
-      const isFiltered = filterType !== "all" && filterType !== nodeType
-
-      return {
-        id: node.id,
-        type: "concept",
-        position: nodePositions[node.id] || { x: 0, y: 0 },
-        data: {
-          label: node.label,
-          nodeType,
-          description: node.description,
-          isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
-          isFiltered,
-          editMode,
-          onDelete: handleDeleteNode,
-        },
-        selected: node.id === selectedNodeId,
-        draggable: editMode,
+  const handleDeleteNode = useCallback(
+    (nodeId: string, nodeName: string) => {
+      if (skipDeleteConfirm) {
+        setNodes((nds) => nds.filter((n) => n.id !== nodeId))
+        setEdges((eds) =>
+          eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
+        )
+      } else {
+        setDeleteConfirm({ type: "node", id: nodeId, name: nodeName })
       }
-    })
-  }, [activeRootCauseId, selectedNodeId, isAnalyzing, filterType, editMode, handleDeleteNode])
+    },
+    [skipDeleteConfirm]
+  )
 
-  // Generate edges - 기존 데이터 + 새로 추가한 엣지, 연결되지 않은 것 필터링
+  // ── 핸들러: 엣지 삭제 요청 ─────────────────────────────────
+
+  const handleDeleteEdge = useCallback(
+    (edgeId: string) => {
+      if (skipDeleteConfirm) {
+        setEdges((eds) => eds.filter((e) => e.id !== edgeId))
+      } else {
+        setDeleteConfirm({ type: "edge", id: edgeId, name: "연결선" })
+      }
+    },
+    [skipDeleteConfirm]
+  )
+
+  // ── 초기 노드 생성 (마운트 시 1회) ────────────────────────
+
+  const initialNodes: Node[] = useMemo(
+    () =>
+      knowledgeNodes.map((node) => {
+        const nodeType = resolveNodeType(node.id, activeRootCauseId)
+        const isFiltered = filterType !== "all" && filterType !== nodeType
+        return {
+          id: node.id,
+          type: "concept",
+          position: nodePositions[node.id] ?? { x: 0, y: 0 },
+          data: {
+            label: node.label,
+            nodeType,
+            description: node.description,
+            isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
+            isFiltered,
+            editMode: false,
+            onDelete: handleDeleteNode,
+          },
+          selected: node.id === selectedNodeId,
+          draggable: false,
+        }
+      }),
+    // 의도적으로 마운트 시 1회만 실행 — 이후 상태는 아래 effect에서 동기화
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+
+  // ── 초기 엣지 생성 (마운트 시 1회) ────────────────────────
+
   const initialEdges: Edge[] = useMemo(() => {
-    const nodeIds = knowledgeNodes.map(n => n.id)
+    const nodeIdSet = new Set(knowledgeNodes.map((n) => n.id))
     const edges: Edge[] = []
-    
+
     knowledgeNodes.forEach((node) => {
       node.prerequisites.forEach((prereqId) => {
-        const isPathToRootCause =
-          activeRootCauseId && (node.id === activeRootCauseId || prereqId === activeRootCauseId)
+        if (!nodeIdSet.has(prereqId)) return // 고아 엣지 방지
+        const isPath =
+          !!activeRootCauseId &&
+          (node.id === activeRootCauseId || prereqId === activeRootCauseId)
 
         edges.push({
           id: `${prereqId}-${node.id}`,
           source: prereqId,
           target: node.id,
-          type: editMode ? "deletable" : "smoothstep",
-          animated: isAnalyzing && isPathToRootCause,
-          data: {
-            editMode,
-            isDeletable: true,  // 기본 엣지는 삭제 가능
-            onDeleteEdge: handleDeleteEdge,
-          },
-          style: {
-            stroke: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--border))",
-            strokeWidth: isPathToRootCause ? 2.5 : 1.5,
-            opacity: filterType !== "all" ? 0.3 : 1,
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--muted-foreground))",
-            width: 16,
-            height: 16,
-          },
+          type: "smoothstep",
+          data: { editMode: false, onDeleteEdge: handleDeleteEdge },
+          ...buildEdgeStyle(isPath, filterType, isAnalyzing),
         })
       })
     })
-    
-    // 새로 추가된 엣지 중 연결 대상이 존재하는 것만 추가
-    return edges.filter(e => nodeIds.includes(e.source) && nodeIds.includes(e.target))
-  }, [activeRootCauseId, isAnalyzing, filterType, editMode, handleDeleteEdge])
+
+    return edges
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  // Update nodes when not in edit mode
-  useEffect(() => {
-    if (!editMode) {
-      setNodes(initialNodes)
-      setEdges(initialEdges)
-    }
-  }, [editMode, initialNodes, initialEdges, setNodes, setEdges])
+  // ── [Fix 2 핵심] 비분석 상태/필터 변화 시 → 구조는 유지하고 표시 속성만 갱신
+  //    editMode 중에는 실행하지 않아 사용자 편집이 덮어써지지 않음 ─────────
 
-  // Update node data when editMode changes (keep positions)
   useEffect(() => {
-    if (editMode) {
-      setNodes((nds) =>
-        nds.map((n) => ({
+    if (editMode) return
+
+    setNodes((nds) =>
+      nds.map((n) => {
+        const nodeType = resolveNodeType(n.id, activeRootCauseId)
+        const isFiltered = filterType !== "all" && filterType !== nodeType
+        return {
           ...n,
-          draggable: true,
+          draggable: false,
+          selected: n.id === selectedNodeId,
           data: {
             ...n.data,
-            editMode: true,
+            nodeType,
+            isAnalyzing: isAnalyzing && n.id === activeRootCauseId,
+            isFiltered,
+            editMode: false,
             onDelete: handleDeleteNode,
           },
-        }))
-      )
-      setEdges((eds) =>
-        eds.map((e) => ({
+        }
+      })
+    )
+
+    setEdges((eds) =>
+      eds.map((e) => {
+        const isPath =
+          !!activeRootCauseId &&
+          (e.target === activeRootCauseId || e.source === activeRootCauseId)
+        return {
           ...e,
-          type: "deletable",
-          data: {
-            ...e.data,
-            editMode: true,
-            isDeletable: true,
-            onDeleteEdge: handleDeleteEdge,
-          },
-        }))
-      )
-    }
+          type: "smoothstep",
+          data: { ...e.data, editMode: false, onDeleteEdge: handleDeleteEdge },
+          ...buildEdgeStyle(isPath, filterType, isAnalyzing),
+        }
+      })
+    )
+  }, [
+    activeRootCauseId,
+    isAnalyzing,
+    filterType,
+    selectedNodeId,
+    editMode,
+    handleDeleteNode,
+    handleDeleteEdge,
+    setNodes,
+    setEdges,
+  ])
+
+  // ── editMode 진입 시 → 엣지를 deletable 타입으로 교체 ─────
+
+  useEffect(() => {
+    if (!editMode) return
+
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        draggable: true,
+        data: { ...n.data, editMode: true, onDelete: handleDeleteNode },
+      }))
+    )
+
+    setEdges((eds) =>
+      eds.map((e) => ({
+        ...e,
+        type: "deletable",
+        data: { ...e.data, editMode: true, onDeleteEdge: handleDeleteEdge },
+      }))
+    )
   }, [editMode, handleDeleteNode, handleDeleteEdge, setNodes, setEdges])
 
-  // Handle edge connections in edit mode
+  // ── 엣지 새 연결 ──────────────────────────────────────────
+
   const onConnect = useCallback(
     (params: Connection) => {
-      if (editMode) {
-        setEdges((eds) => addEdge({ 
-          ...params, 
-          type: "deletable",
-          data: { editMode: true, isDeletable: true, onDeleteEdge: handleDeleteEdge }
-        }, eds))
-      }
+      if (!editMode) return
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            type: "deletable",
+            data: { editMode: true, onDeleteEdge: handleDeleteEdge },
+          },
+          eds
+        )
+      )
     },
     [editMode, setEdges, handleDeleteEdge]
   )
 
+  // ── 노드 클릭 ────────────────────────────────────────────
+
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      if (editMode) return // 수정 모드에서는 클릭 이벤트 무시
-
+      if (editMode) return
       const kNode = knowledgeNodes.find((n) => n.id === node.id)
-      if (kNode) {
-        let nodeType: "standard" | "mastered" | "missing" = "standard"
-        if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
-        else if (node.id === activeRootCauseId) nodeType = "missing"
+      if (!kNode) return
 
-        onNodeClick({
-          id: node.id,
-          label: kNode.label,
-          type: nodeType,
-          description: kNode.description,
-        })
-      }
+      onNodeClick({
+        id: node.id,
+        label: kNode.label,
+        type: resolveNodeType(node.id, activeRootCauseId),
+        description: kNode.description,
+      })
     },
     [onNodeClick, activeRootCauseId, editMode]
   )
 
-  // 수정 모드 진입
-  const enterEditMode = () => {
-    setSavedNodes([...nodes])
-    setSavedEdges([...edges])
-    setEditMode(true)
-  }
+  // ── 수정 모드 진입 ───────────────────────────────────────
 
-  // 수정 저장
-  const saveChanges = async () => {
-    console.log("[v0] Saving changes - Nodes:", nodes, "Edges:", edges)
-    
-    // TODO: AI 연동 - 변경된 노드/엣지 정보를 서버에 저장
-    // 예시: 
-    // const response = await fetch('/api/graph/save', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ 
-    //     nodes: nodes.map(n => ({ id: n.id, position: n.position })),
-    //     edges: edges.map(e => ({ source: e.source, target: e.target }))
-    //   })
-    // })
-
-    // 저장된 상태 유지하고 수정 모드만 종료
-    setSavedNodes(null)
-    setSavedEdges(null)
-    setEditMode(false)
-  }
-
-  // 수정 취소
-  const cancelChanges = () => {
-    if (savedNodes && savedEdges) {
-      setNodes(savedNodes)
-      setEdges(savedEdges)
+  const enterEditMode = useCallback(() => {
+    // 현재 상태를 ref에 스냅샷으로 저장
+    snapshotRef.current = {
+      nodes: nodes.map((n) => ({ ...n, data: { ...n.data } })),
+      edges: edges.map((e) => ({ ...e })),
     }
-    setSavedNodes(null)
-    setSavedEdges(null)
-    setEditMode(false)
-  }
+    setEditMode(true)
+  }, [nodes, edges])
 
-  // 노드 추가
-  const addNewNode = () => {
-    const newId = (Math.max(...nodes.map((n) => parseInt(n.id)), 0) + 1).toString()
+  // ── 저장 ────────────────────────────────────────────────
+
+  const saveChanges = useCallback(async () => {
+    // TODO: 서버 저장 로직
+    // await fetch('/api/graph/save', { method: 'POST', body: JSON.stringify({ nodes, edges }) })
+
+    snapshotRef.current = null
+    setEditMode(false)
+    // editMode가 false로 바뀌면 위 effect가 표시 속성만 재동기화 — 구조/위치는 유지됨
+  }, [])
+
+  // ── 취소 ────────────────────────────────────────────────
+
+  const cancelChanges = useCallback(() => {
+    if (snapshotRef.current) {
+      setNodes(snapshotRef.current.nodes)
+      setEdges(snapshotRef.current.edges)
+      snapshotRef.current = null
+    }
+    setEditMode(false)
+  }, [setNodes, setEdges])
+
+  // ── 노드 추가 ────────────────────────────────────────────
+
+  const addNewNode = useCallback(() => {
+    const maxId = Math.max(...nodes.map((n) => parseInt(n.id) || 0), 0)
+    const newId = String(maxId + 1)
     const newNode: Node = {
       id: newId,
       type: "concept",
-      position: { x: 400, y: 500 },
+      position: { x: 400, y: 520 },
       data: {
         label: `새 개념 ${newId}`,
         nodeType: "standard",
@@ -427,31 +523,46 @@ export function KnowledgeGraphCanvas({
       draggable: true,
     }
     setNodes((nds) => [...nds, newNode])
-  }
+  }, [nodes, handleDeleteNode, setNodes])
 
-  // 삭제 확정
-  const executeDelete = () => {
-    if (deleteConfirm.id) {
-      if (deleteConfirm.type === "node") {
-        setNodes((nds) => nds.filter((n) => n.id !== deleteConfirm.id))
-        setEdges((eds) => eds.filter((e) => e.source !== deleteConfirm.id && e.target !== deleteConfirm.id))
-      } else if (deleteConfirm.type === "edge") {
-        setEdges((eds) => eds.filter((e) => e.id !== deleteConfirm.id))
-      }
+  // ── 삭제 확정 ─────────────────────────────────────────────
+
+  const executeDelete = useCallback(() => {
+    const { id, type } = deleteConfirm
+    if (!id) return
+
+    if (type === "node") {
+      setNodes((nds) => nds.filter((n) => n.id !== id))
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id))
+    } else if (type === "edge") {
+      setEdges((eds) => eds.filter((e) => e.id !== id))
     }
     setDeleteConfirm({ type: null, id: null, name: "" })
-  }
+  }, [deleteConfirm, setNodes, setEdges])
 
-  // 삭제 취소
-  const cancelDelete = () => {
+  const cancelDelete = useCallback(() => {
     setDeleteConfirm({ type: null, id: null, name: "" })
-  }
+  }, [])
 
-  // AI 정리 요청
-  const requestAiOrganize = () => {
+  // ── 필터 토글 ─────────────────────────────────────────────
+
+  const toggleFilter = useCallback(
+    (type: "mastered" | "standard" | "missing") => {
+      setFilterType((prev) => (prev === type ? "all" : type))
+    },
+    []
+  )
+
+  // ── AI 정리 ──────────────────────────────────────────────
+
+  const requestAiOrganize = useCallback(() => {
     setShowAiSuggestion(true)
-    // TODO: AI 연동 - AI가 노드 위치와 연결을 분석하여 최적화된 배치 제안
-  }
+    // TODO: AI 레이아웃 최적화 API 연동
+  }, [])
+
+  // ─────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────
 
   const analysisSteps = [
     "문제를 관련 개념에 매핑 중...",
@@ -459,11 +570,6 @@ export function KnowledgeGraphCanvas({
     "선행 개념 의존성 추적 중...",
     "결손 개념 확정 완료",
   ]
-
-  // 필터 토글
-  const toggleFilter = (type: "mastered" | "standard" | "missing") => {
-    setFilterType((prev) => (prev === type ? "all" : type))
-  }
 
   return (
     <div className="flex-1 h-full w-full relative">
@@ -487,12 +593,17 @@ export function KnowledgeGraphCanvas({
           nodesConnectable={editMode}
           elementsSelectable={editMode}
           panOnDrag={!editMode}
-          zoomOnScroll={true}
-          zoomOnPinch={true}
+          zoomOnScroll
+          zoomOnPinch
           zoomOnDoubleClick={false}
           selectNodesOnDrag={false}
         >
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={24}
+            size={1}
+            color="hsl(var(--border))"
+          />
           <Controls
             className="!bg-card !border-border !rounded-xl !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!rounded-lg [&>button:hover]:!bg-muted"
             showInteractive={false}
@@ -500,13 +611,12 @@ export function KnowledgeGraphCanvas({
         </ReactFlow>
       </div>
 
-      {/* Analysis Progress Overlay */}
+      {/* ── Analysis Progress Overlay ── */}
       {isAnalyzing && (
         <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-20 flex items-center justify-center">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4">
             <div className="flex flex-col items-center gap-5">
               <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-
               <div className="w-full space-y-2">
                 {analysisSteps.map((step, idx) => (
                   <div
@@ -526,7 +636,11 @@ export function KnowledgeGraphCanvas({
                           : "border-muted-foreground text-muted-foreground"
                       )}
                     >
-                      {idx < (analysisStep ?? 0) ? <Check className="h-3 w-3" /> : idx + 1}
+                      {idx < (analysisStep ?? 0) ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        idx + 1
+                      )}
                     </div>
                     <span className="text-sm">{step}</span>
                   </div>
@@ -537,7 +651,7 @@ export function KnowledgeGraphCanvas({
         </div>
       )}
 
-      {/* Title & Edit Mode Controls */}
+      {/* ── Title & Edit Controls ── */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
         <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl px-4 py-3 shadow-lg">
           <h2 className="text-base font-bold text-foreground">지식 그래프</h2>
@@ -575,43 +689,32 @@ export function KnowledgeGraphCanvas({
         )}
       </div>
 
-      {/* Legend with Filter */}
+      {/* ── Legend / Filter ── */}
       <div className="absolute top-4 right-4 z-10">
         <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-3 shadow-lg space-y-2">
-          <button
-            onClick={() => toggleFilter("mastered")}
-            className={cn(
-              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
-              filterType === "mastered" ? "bg-primary/15" : "hover:bg-muted"
-            )}
-          >
-            <div className="w-3 h-3 rounded-full bg-primary" />
-            <span className="text-muted-foreground">완료된 개념</span>
-          </button>
-          <button
-            onClick={() => toggleFilter("standard")}
-            className={cn(
-              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
-              filterType === "standard" ? "bg-muted-foreground/15" : "hover:bg-muted"
-            )}
-          >
-            <div className="w-3 h-3 rounded-full bg-muted-foreground/30 border border-border" />
-            <span className="text-muted-foreground">학습 필요</span>
-          </button>
-          <button
-            onClick={() => toggleFilter("missing")}
-            className={cn(
-              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
-              filterType === "missing" ? "bg-destructive/15" : "hover:bg-muted"
-            )}
-          >
-            <div className="w-3 h-3 rounded-full bg-destructive" />
-            <span className="text-muted-foreground">결손 개념</span>
-          </button>
+          {(
+            [
+              { key: "mastered", color: "bg-primary", label: "완료된 개념" },
+              { key: "standard", color: "bg-muted-foreground/30 border border-border", label: "학습 필요" },
+              { key: "missing", color: "bg-destructive", label: "결손 개념" },
+            ] as const
+          ).map(({ key, color, label }) => (
+            <button
+              key={key}
+              onClick={() => toggleFilter(key)}
+              className={cn(
+                "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
+                filterType === key ? "bg-muted" : "hover:bg-muted"
+              )}
+            >
+              <div className={cn("w-3 h-3 rounded-full", color)} />
+              <span className="text-muted-foreground">{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* AI Suggestion Bubble */}
+      {/* ── AI Suggestion Bubble ── */}
       {showAiSuggestion && (
         <div className="absolute bottom-20 right-4 z-20 max-w-xs animate-in slide-in-from-bottom-4">
           <div className="bg-card border border-border rounded-2xl p-4 shadow-xl">
@@ -621,14 +724,19 @@ export function KnowledgeGraphCanvas({
               </div>
               <div className="flex-1">
                 <p className="text-sm text-foreground leading-relaxed">
-                  보니까 <strong>행렬식</strong> 개념에서 자주 막히시는 것 같아요! 
-                  <strong> 행렬 곱셈</strong>부터 차근차근 복습해볼까요?
+                  보니까 <strong>행렬식</strong> 개념에서 자주 막히시는 것 같아요!{" "}
+                  <strong>행렬 곱셈</strong>부터 차근차근 복습해볼까요?
                 </p>
                 <div className="flex gap-2 mt-3">
                   <Button size="sm" variant="default" className="h-8">
                     네, 시작할게요
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-8" onClick={() => setShowAiSuggestion(false)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={() => setShowAiSuggestion(false)}
+                  >
                     나중에
                   </Button>
                 </div>
@@ -638,7 +746,7 @@ export function KnowledgeGraphCanvas({
         </div>
       )}
 
-      {/* Delete Confirmation Popup */}
+      {/* ── Delete Confirmation Modal ── */}
       {deleteConfirm.id && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
           <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
@@ -650,9 +758,10 @@ export function KnowledgeGraphCanvas({
                 {deleteConfirm.type === "node" ? "노드 삭제" : "연결선 삭제"}
               </h3>
             </div>
-            
+
             <p className="text-sm text-muted-foreground mb-4">
-              <strong className="text-foreground">{deleteConfirm.name}</strong>을(를) 정말로 삭제하시겠습니까?
+              <strong className="text-foreground">{deleteConfirm.name}</strong>
+              을(를) 정말로 삭제하시겠습니까?
               {deleteConfirm.type === "node" && (
                 <>
                   <br />
@@ -666,7 +775,7 @@ export function KnowledgeGraphCanvas({
                 type="checkbox"
                 checked={skipDeleteConfirm}
                 onChange={(e) => setSkipDeleteConfirm(e.target.checked)}
-                className="w-4 h-4 rounded border-border text-primary focus:ring-primary accent-primary"
+                className="w-4 h-4 rounded border-border accent-primary"
               />
               <span className="text-xs text-muted-foreground">오늘은 다시 묻지 않기</span>
             </label>
@@ -675,11 +784,7 @@ export function KnowledgeGraphCanvas({
               <Button variant="ghost" size="sm" onClick={cancelDelete}>
                 취소
               </Button>
-              <Button 
-                variant="destructive" 
-                size="sm" 
-                onClick={executeDelete}
-              >
+              <Button variant="destructive" size="sm" onClick={executeDelete}>
                 삭제
               </Button>
             </div>
