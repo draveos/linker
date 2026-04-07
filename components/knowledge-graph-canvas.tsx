@@ -211,14 +211,18 @@ export function KnowledgeGraphCanvas({
     }
   }, [skipDeleteConfirm])
 
-  // 엣지 삭제 요청
+  // 엣지 삭제 요청 - 연결된 엣지만 삭제 가능
   const handleDeleteEdge = useCallback((edgeId: string) => {
+    // 엣지가 실제로 존재하는지 확인
+    const edgeExists = edges.some((e) => e.id === edgeId)
+    if (!edgeExists) return
+
     if (skipDeleteConfirm) {
       setEdges((eds) => eds.filter((e) => e.id !== edgeId))
     } else {
       setDeleteConfirm({ type: "edge", id: edgeId, name: "연결선" })
     }
-  }, [skipDeleteConfirm])
+  }, [edges, skipDeleteConfirm])
 
   // Generate nodes
   const initialNodes: Node[] = useMemo(() => {
@@ -248,9 +252,11 @@ export function KnowledgeGraphCanvas({
     })
   }, [activeRootCauseId, selectedNodeId, isAnalyzing, filterType, editMode, handleDeleteNode])
 
-  // Generate edges
+  // Generate edges - 기존 데이터 + 새로 추가한 엣지, 연결되지 않은 것 필터링
   const initialEdges: Edge[] = useMemo(() => {
+    const nodeIds = knowledgeNodes.map(n => n.id)
     const edges: Edge[] = []
+    
     knowledgeNodes.forEach((node) => {
       node.prerequisites.forEach((prereqId) => {
         const isPathToRootCause =
@@ -280,7 +286,9 @@ export function KnowledgeGraphCanvas({
         })
       })
     })
-    return edges
+    
+    // 새로 추가된 엣지 중 연결 대상이 존재하는 것만 추가
+    return edges.filter(e => nodeIds.includes(e.source) && nodeIds.includes(e.target))
   }, [activeRootCauseId, isAnalyzing, filterType, editMode, handleDeleteEdge])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
@@ -365,11 +373,24 @@ export function KnowledgeGraphCanvas({
   }
 
   // 수정 저장
-  const saveChanges = () => {
+  const saveChanges = async () => {
+    console.log("[v0] Saving changes - Nodes:", nodes, "Edges:", edges)
+    
+    // TODO: AI 연동 - 변경된 노드/엣지 정보를 서버에 저장
+    // 예시: 
+    // const response = await fetch('/api/graph/save', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ 
+    //     nodes: nodes.map(n => ({ id: n.id, position: n.position })),
+    //     edges: edges.map(e => ({ source: e.source, target: e.target }))
+    //   })
+    // })
+
+    // 현재는 로컬에서만 상태 변경
     setSavedNodes(null)
     setSavedEdges(null)
     setEditMode(false)
-    // TODO: AI 연동 - 변경된 노드/엣지 정보를 서버에 저장
   }
 
   // 수정 취소
