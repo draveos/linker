@@ -153,12 +153,12 @@ function DeletableEdge({
     targetPosition,
   })
 
-  const { editMode, onDeleteEdge } = data || {}
+  const { editMode, onDeleteEdge, isDeletable } = data || {}
 
   return (
     <>
       <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
-      {editMode && (
+      {editMode && isDeletable && (
         <foreignObject
           width={20}
           height={20}
@@ -273,6 +273,7 @@ export function KnowledgeGraphCanvas({
           animated: isAnalyzing && isPathToRootCause,
           data: {
             editMode,
+            isDeletable: true,  // 기본 엣지는 삭제 가능
             onDeleteEdge: handleDeleteEdge,
           },
           style: {
@@ -326,6 +327,7 @@ export function KnowledgeGraphCanvas({
           data: {
             ...e.data,
             editMode: true,
+            isDeletable: true,
             onDeleteEdge: handleDeleteEdge,
           },
         }))
@@ -340,7 +342,7 @@ export function KnowledgeGraphCanvas({
         setEdges((eds) => addEdge({ 
           ...params, 
           type: "deletable",
-          data: { editMode: true, onDeleteEdge: handleDeleteEdge }
+          data: { editMode: true, isDeletable: true, onDeleteEdge: handleDeleteEdge }
         }, eds))
       }
     },
@@ -390,7 +392,7 @@ export function KnowledgeGraphCanvas({
     //   })
     // })
 
-    // 현재는 로컬에서만 상태 변경
+    // 저장된 상태 유지하고 수정 모드만 종료
     setSavedNodes(null)
     setSavedEdges(null)
     setEditMode(false)
