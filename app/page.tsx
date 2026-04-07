@@ -31,6 +31,7 @@ export default function LinkerPage() {
   ])
 
   // 오답 분석 함수 (기획서: 4단계 분석 프로세스)
+  // TODO: AI 연동 - 실제 AI가 오답을 분석하고 결손 개념을 찾아내는 로직 필요
   const handleAnalyze = useCallback(() => {
     if (!inputText.trim()) return
     setIsAnalyzing(true)
@@ -55,7 +56,7 @@ export default function LinkerPage() {
             setIsAnalyzing(false)
             setAnalysisStep(0)
 
-            // 입력 텍스트 기반 결손 노드 결정
+            // TODO: AI 연동 - 입력 텍스트 기반 결손 노드 결정 (현재는 하드코딩)
             let rootCauseId = "4" // 기본: 행렬식
             let title = "행렬식 계산 오류"
 
@@ -122,7 +123,7 @@ export default function LinkerPage() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen w-screen bg-background overflow-hidden">
       {/* 좌측 사이드바 - 오답 입력 & 분석 */}
       <LeftSidebar
         inputText={inputText}
@@ -134,16 +135,18 @@ export default function LinkerPage() {
         onSelectAnalysis={handleSelectAnalysis}
       />
 
-      {/* 중앙 - React Flow 지식 그래프 */}
-      <KnowledgeGraphCanvas
-        onNodeClick={handleNodeClick}
-        selectedNodeId={selectedNode?.id}
-        activeRootCauseId={activeRootCause}
-        isAnalyzing={isAnalyzing}
-        analysisStep={analysisStep}
-      />
+      {/* 중앙 - React Flow 지식 그래프 (전체 화면 사용) */}
+      <main className="flex-1 h-full w-full min-w-0">
+        <KnowledgeGraphCanvas
+          onNodeClick={handleNodeClick}
+          selectedNodeId={selectedNode?.id}
+          activeRootCauseId={activeRootCause}
+          isAnalyzing={isAnalyzing}
+          analysisStep={analysisStep}
+        />
+      </main>
 
-      {/* 우측 패널 - 마이크로 러닝 */}
+      {/* 우측 패널 - 마이크로 러닝 (팝업 형태) */}
       <RemedyPanel
         selectedNode={selectedNode}
         onClose={handleClosePanel}

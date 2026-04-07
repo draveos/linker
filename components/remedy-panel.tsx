@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -26,7 +28,7 @@ const nodeContent: Record<string, {
   quiz: { question: string; options: string[]; answer: number }
 }> = {
   "4": {
-    explanation: "행렬식(Determinant)은 정사각 행렬에서 계산되는 스칼라 값입니다. 2×2 행렬 [[a,b],[c,d]]의 행렬식은 ad - bc입니다. 반대각선의 곱을 빼는 것을 잊거나 부호 실수를 했을 수 있습니다.",
+    explanation: "행렬식(Determinant)은 정사각 행렬에서 계산되는 스칼라 값입니다. 2x2 행렬 [[a,b],[c,d]]의 행렬식은 ad - bc입니다. 반대각선의 곱을 빼는 것을 잊거나 부호 실수를 했을 수 있습니다.",
     videoTitle: "행렬식 완벽 이해하기",
     videoDuration: "3:45",
     summary: "행렬식은 행렬이 공간을 얼마나 확대/축소하는지를 나타냅니다. 부호는 방향(회전) 보존 여부를 알려줍니다.",
@@ -38,10 +40,10 @@ const nodeContent: Record<string, {
     }
   },
   "5": {
-    explanation: "역행렬을 구하려면 먼저 행렬식을 계산해야 합니다. det(A) = 0이면 역행렬이 존재하지 않습니다. 2×2 행렬의 경우, 대각 원소를 교환하고, 반대각 원소의 부호를 바꾼 후, 행렬식으로 나눕니다.",
+    explanation: "역행렬을 구하려면 먼저 행렬식을 계산해야 합니다. det(A) = 0이면 역행렬이 존재하지 않습니다. 2x2 행렬의 경우, 대각 원소를 교환하고, 반대각 원소의 부호를 바꾼 후, 행렬식으로 나눕니다.",
     videoTitle: "역행렬 구하기",
     videoDuration: "4:20",
-    summary: "역행렬 A⁻¹은 A × A⁻¹ = I를 만족합니다. 연립방정식 풀이와 변환에 사용됩니다.",
+    summary: "역행렬 A^-1은 A x A^-1 = I를 만족합니다. 연립방정식 풀이와 변환에 사용됩니다.",
     prerequisites: ["행렬식", "단위행렬"],
     quiz: {
       question: "det(A) = 0일 때 역행렬은?",
@@ -50,13 +52,13 @@ const nodeContent: Record<string, {
     }
   },
   "6": {
-    explanation: "여인수 전개는 큰 행렬의 행렬식을 작은 행렬들로 분해하여 계산하는 방법입니다. 각 원소에 해당 여인수(소행렬식 × 위치에 따른 부호)를 곱합니다.",
+    explanation: "여인수 전개는 큰 행렬의 행렬식을 작은 행렬들로 분해하여 계산하는 방법입니다. 각 원소에 해당 여인수(소행렬식 x 위치에 따른 부호)를 곱합니다.",
     videoTitle: "여인수 전개 방법",
     videoDuration: "5:10",
     summary: "여인수를 사용하면 어떤 크기의 행렬식도 재귀적으로 계산할 수 있습니다.",
     prerequisites: ["행렬식", "행렬 연산"],
     quiz: {
-      question: "3×3 행렬의 여인수 전개 시 필요한 2×2 행렬식의 개수는?",
+      question: "3x3 행렬의 여인수 전개 시 필요한 2x2 행렬식의 개수는?",
       options: ["3개", "6개", "9개", "2개"],
       answer: 0
     }
@@ -80,13 +82,13 @@ const nodeContent: Record<string, {
     summary: "고유값 분해는 행렬의 본질적인 성질을 파악하는 핵심 도구입니다.",
     prerequisites: ["행렬식", "선형 변환"],
     quiz: {
-      question: "2×2 행렬의 고유값 개수는 최대?",
+      question: "2x2 행렬의 고유값 개수는 최대?",
       options: ["2개", "1개", "4개", "무한개"],
       answer: 0
     }
   },
   "10": {
-    explanation: "대각화는 행렬을 P⁻¹AP = D 형태로 변환하는 것입니다. D는 대각행렬이고, P는 고유벡터로 구성됩니다. 모든 행렬이 대각화 가능한 것은 아닙니다.",
+    explanation: "대각화는 행렬을 P^-1 AP = D 형태로 변환하는 것입니다. D는 대각행렬이고, P는 고유벡터로 구성됩니다. 모든 행렬이 대각화 가능한 것은 아닙니다.",
     videoTitle: "행렬의 대각화",
     videoDuration: "4:45",
     summary: "대각화하면 행렬의 거듭제곱 계산이 매우 쉬워집니다.",
@@ -113,150 +115,181 @@ const defaultContent = {
 }
 
 export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
+  const [mounted, setMounted] = useState(false)
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
+  const [showResult, setShowResult] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
+
+  useEffect(() => {
+    setSelectedAnswer(null)
+    setShowResult(false)
+  }, [selectedNode?.id])
+
   const isOpen = selectedNode !== null
   const content = selectedNode ? (nodeContent[selectedNode.id] || defaultContent) : null
 
-  if (!isOpen || !content) {
-    return (
-      <aside className="w-[360px] border-l border-border bg-muted/20 flex items-center justify-center h-full shrink-0 max-lg:hidden">
-        <div className="text-center p-6">
-          <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-            <Target className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">노드를 클릭하면<br />상세 정보가 표시됩니다</p>
-        </div>
-      </aside>
-    )
+  const handleAnswerClick = (idx: number) => {
+    setSelectedAnswer(idx)
+    setShowResult(true)
   }
 
-  return (
-    <aside className="w-[360px] border-l border-border bg-card flex flex-col h-full shrink-0 max-lg:hidden">
-      {/* Header */}
-      <div className="p-5 border-b border-border">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div
-                className={cn(
-                  "p-2 rounded-xl",
-                  selectedNode.type === "missing" && "bg-destructive/15",
-                  selectedNode.type === "mastered" && "bg-primary/15",
-                  selectedNode.type === "standard" && "bg-secondary"
-                )}
-              >
-                {selectedNode.type === "missing" && <AlertCircle className="h-5 w-5 text-destructive" />}
-                {selectedNode.type === "mastered" && <CheckCircle className="h-5 w-5 text-primary" />}
-                {selectedNode.type === "standard" && <Target className="h-5 w-5 text-muted-foreground" />}
+  if (!isOpen || !content || !mounted) return null
+
+  const isCorrect = selectedAnswer === content.quiz.answer
+
+  const panelContent = (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 fade-in duration-200">
+        {/* Header */}
+        <div className="p-5 border-b border-border shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className={cn(
+                    "p-2 rounded-xl",
+                    selectedNode.type === "missing" && "bg-destructive/15",
+                    selectedNode.type === "mastered" && "bg-primary/15",
+                    selectedNode.type === "standard" && "bg-secondary"
+                  )}
+                >
+                  {selectedNode.type === "missing" && <AlertCircle className="h-5 w-5 text-destructive" />}
+                  {selectedNode.type === "mastered" && <CheckCircle className="h-5 w-5 text-primary" />}
+                  {selectedNode.type === "standard" && <Target className="h-5 w-5 text-muted-foreground" />}
+                </div>
+                <span
+                  className={cn(
+                    "text-xs font-semibold px-2.5 py-1 rounded-full",
+                    selectedNode.type === "missing" && "bg-destructive/15 text-destructive",
+                    selectedNode.type === "mastered" && "bg-primary/15 text-primary",
+                    selectedNode.type === "standard" && "bg-secondary text-muted-foreground"
+                  )}
+                >
+                  {selectedNode.type === "missing" && "결손 개념"}
+                  {selectedNode.type === "mastered" && "완료"}
+                  {selectedNode.type === "standard" && "학습 필요"}
+                </span>
               </div>
-              <span
-                className={cn(
-                  "text-xs font-semibold px-2.5 py-1 rounded-full",
-                  selectedNode.type === "missing" && "bg-destructive/15 text-destructive",
-                  selectedNode.type === "mastered" && "bg-primary/15 text-primary",
-                  selectedNode.type === "standard" && "bg-secondary text-muted-foreground"
-                )}
-              >
-                {selectedNode.type === "missing" && "결손 개념"}
-                {selectedNode.type === "mastered" && "완료"}
-                {selectedNode.type === "standard" && "학습 필요"}
+              <h2 className="text-lg font-bold text-foreground">{selectedNode.label}</h2>
+              <p className="text-sm text-muted-foreground mt-1">{selectedNode.description}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-lg shrink-0 hover:bg-secondary"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-5 space-y-5">
+          {/* AI Explanation - TODO: AI 연동 필요 */}
+          <div
+            className={cn(
+              "rounded-xl p-4",
+              selectedNode.type === "missing"
+                ? "bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50"
+                : "bg-secondary/50 border border-border"
+            )}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Lightbulb className={cn("h-4 w-4", selectedNode.type === "missing" ? "text-amber-600" : "text-primary")} />
+              <span className="text-sm font-semibold text-foreground">
+                {selectedNode.type === "missing" ? "왜 틀렸을까요?" : "개념 설명"}
               </span>
             </div>
-            <h2 className="text-lg font-bold text-foreground">{selectedNode.label}</h2>
-            <p className="text-sm text-muted-foreground mt-1">{selectedNode.description}</p>
+            <p className="text-sm text-foreground/80 leading-relaxed">{content.explanation}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-lg shrink-0 hover:bg-secondary"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
+
+          {/* 3-Minute Micro-Learning Video - TODO: 실제 비디오 연동 필요 */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <GraduationCap className="h-4 w-4 text-muted-foreground" />
+              3분 마이크로 러닝
+            </h3>
+            <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-primary/10 to-background border border-border aspect-video group cursor-pointer hover:shadow-lg transition-shadow">
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-xl shadow-primary/30 group-hover:scale-110 transition-transform">
+                  <Play className="h-6 w-6 text-primary-foreground ml-1" />
+                </div>
+                <p className="text-sm font-medium text-foreground mt-3">{content.videoTitle}</p>
+                <p className="text-xs text-muted-foreground">{content.videoDuration}</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{content.summary}</p>
+          </div>
+
+          {/* Prerequisites */}
+          {content.prerequisites.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-muted-foreground" />
+                선행 개념
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {content.prerequisites.map((prereq) => (
+                  <span
+                    key={prereq}
+                    className="text-xs font-medium px-3 py-1.5 rounded-full bg-secondary text-foreground border border-border"
+                  >
+                    {prereq}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quick Quiz - TODO: AI 연동으로 동적 퀴즈 생성 필요 */}
+          <div className="rounded-xl border border-border p-4 bg-muted/30">
+            <h3 className="text-sm font-semibold text-foreground mb-3">확인 퀴즈</h3>
+            <p className="text-sm text-foreground mb-3">{content.quiz.question}</p>
+            <div className="space-y-2">
+              {content.quiz.options.map((option, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleAnswerClick(idx)}
+                  disabled={showResult}
+                  className={cn(
+                    "w-full text-left text-sm px-4 py-2.5 rounded-lg border transition-colors",
+                    showResult && idx === content.quiz.answer && "bg-green-100 border-green-500 text-green-800 dark:bg-green-950 dark:border-green-700 dark:text-green-300",
+                    showResult && selectedAnswer === idx && idx !== content.quiz.answer && "bg-red-100 border-red-500 text-red-800 dark:bg-red-950 dark:border-red-700 dark:text-red-300",
+                    !showResult && "border-border bg-card hover:bg-primary/5 hover:border-primary/30"
+                  )}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            {showResult && (
+              <p className={cn("text-sm mt-3 font-medium", isCorrect ? "text-green-600" : "text-red-600")}>
+                {isCorrect ? "정답입니다!" : "틀렸습니다. 다시 복습해보세요."}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-5 border-t border-border bg-muted/30 shrink-0">
+          <Button className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium">
+            학습 완료로 표시
+            <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         </div>
       </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-5 space-y-5">
-        {/* AI Explanation */}
-        <div
-          className={cn(
-            "rounded-xl p-4",
-            selectedNode.type === "missing"
-              ? "bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50"
-              : "bg-secondary/50 border border-border"
-          )}
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Lightbulb className={cn("h-4 w-4", selectedNode.type === "missing" ? "text-amber-600" : "text-primary")} />
-            <span className="text-sm font-semibold text-foreground">
-              {selectedNode.type === "missing" ? "왜 틀렸을까요?" : "개념 설명"}
-            </span>
-          </div>
-          <p className="text-sm text-foreground/80 leading-relaxed">{content.explanation}</p>
-        </div>
-
-        {/* 3-Minute Micro-Learning Video */}
-        <div>
-          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-            <GraduationCap className="h-4 w-4 text-muted-foreground" />
-            3분 마이크로 러닝
-          </h3>
-          <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-primary/10 to-background border border-border aspect-video group cursor-pointer hover:shadow-lg transition-shadow">
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-xl shadow-primary/30 group-hover:scale-110 transition-transform">
-                <Play className="h-6 w-6 text-primary-foreground ml-1" />
-              </div>
-              <p className="text-sm font-medium text-foreground mt-3">{content.videoTitle}</p>
-              <p className="text-xs text-muted-foreground">{content.videoDuration}</p>
-            </div>
-          </div>
-          <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{content.summary}</p>
-        </div>
-
-        {/* Prerequisites */}
-        {content.prerequisites.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-muted-foreground" />
-              선행 개념
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {content.prerequisites.map((prereq) => (
-                <span
-                  key={prereq}
-                  className="text-xs font-medium px-3 py-1.5 rounded-full bg-secondary text-foreground border border-border"
-                >
-                  {prereq}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Quiz */}
-        <div className="rounded-xl border border-border p-4 bg-muted/30">
-          <h3 className="text-sm font-semibold text-foreground mb-3">확인 퀴즈</h3>
-          <p className="text-sm text-foreground mb-3">{content.quiz.question}</p>
-          <div className="space-y-2">
-            {content.quiz.options.map((option, idx) => (
-              <button
-                key={idx}
-                className="w-full text-left text-sm px-4 py-2.5 rounded-lg border border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-colors"
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div className="p-5 border-t border-border bg-muted/30">
-        <Button className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium">
-          학습 완료로 표시
-          <ArrowRight className="h-4 w-4 ml-2" />
-        </Button>
-      </div>
-    </aside>
+    </div>
   )
+
+  return createPortal(panelContent, document.body)
 }

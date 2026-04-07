@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useEffect } from "react"
+import { useCallback, useMemo, useEffect, useState } from "react"
 import ReactFlow, {
   Node,
   Edge,
@@ -12,11 +12,14 @@ import ReactFlow, {
   Position,
   MarkerType,
   BackgroundVariant,
+  addEdge,
+  Connection,
   type NodeProps,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { Check, AlertTriangle, Circle } from "lucide-react"
+import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 // Types
 export interface KnowledgeNode {
@@ -41,7 +44,7 @@ interface KnowledgeGraphCanvasProps {
   analysisStep?: number
 }
 
-// 기초 선형대수학 개념 (8-12개)
+// 기초 선형대수학 개념
 const knowledgeNodes: KnowledgeNode[] = [
   { id: "1", label: "벡터", description: "벡터의 기본 개념과 연산", prerequisites: [] },
   { id: "2", label: "행렬", description: "행렬의 정의와 기본 연산", prerequisites: ["1"] },
@@ -58,7 +61,7 @@ const knowledgeNodes: KnowledgeNode[] = [
 // 완료된 개념 (파란색)
 const masteredNodeIds = ["1", "2", "3"]
 
-// 노드 위치 (계층 구조)
+// 노드 위치
 const nodePositions: Record<string, { x: number; y: number }> = {
   "1": { x: 400, y: 50 },
   "2": { x: 400, y: 130 },
@@ -74,7 +77,7 @@ const nodePositions: Record<string, { x: number; y: number }> = {
 
 // Custom Node Component
 function ConceptNode({ data, selected }: NodeProps) {
-  const { label, nodeType, isAnalyzing } = data
+  const { label, nodeType, isAnalyzing, isFiltered, editMode } = data
 
   return (
     <div
@@ -84,7 +87,9 @@ function ConceptNode({ data, selected }: NodeProps) {
         nodeType === "standard" && "bg-card text-card-foreground border-border hover:border-primary/50",
         nodeType === "missing" && "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
         nodeType === "missing" && isAnalyzing && "animate-pulse",
-        selected && "ring-2 ring-ring ring-offset-2"
+        selected && "ring-2 ring-ring ring-offset-2",
+        isFiltered && "opacity-20",
+        editMode && "cursor-grab active:cursor-grabbing"
       )}
     >
       <Handle type="target" position={Position.Top} className="!bg-muted-foreground !w-2 !h-2 !border-0" />
@@ -101,7 +106,7 @@ function ConceptNode({ data, selected }: NodeProps) {
   )
 }
 
-const nodeTypes = { concept: ConceptNode }
+const nodeTypes = { concept: ConceptNode } as const
 
 export function KnowledgeGraphCanvas({
   onNodeClick,
@@ -110,12 +115,20 @@ export function KnowledgeGraphCanvas({
   isAnalyzing,
   analysisStep,
 }: KnowledgeGraphCanvasProps) {
+  const [editMode, setEditMode] = useState(false)
+  const [savedNodes, setSavedNodes] = useState<Node[] | null>(null)
+  const [savedEdges, setSavedEdges] = useState<Edge[] | null>(null)
+  const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
+  const [showAiSuggestion, setShowAiSuggestion] = useState(false)
+
   // Generate nodes
   const initialNodes: Node[] = useMemo(() => {
     return knowledgeNodes.map((node) => {
       let nodeType: "standard" | "mastered" | "missing" = "standard"
       if (masteredNodeIds.includes(node.id)) nodeType = "mastered"
       else if (node.id === activeRootCauseId) nodeType = "missing"
+
+      const isFiltered = filterType !== "all" && filterType !== nodeType
 
       return {
         id: node.id,
@@ -126,11 +139,14 @@ export function KnowledgeGraphCanvas({
           nodeType,
           description: node.description,
           isAnalyzing: isAnalyzing && node.id === activeRootCauseId,
+          isFiltered,
+          editMode,
         },
         selected: node.id === selectedNodeId,
+        draggable: editMode,
       }
     })
-  }, [activeRootCauseId, selectedNodeId, isAnalyzing])
+  }, [activeRootCauseId, selectedNodeId, isAnalyzing, filterType, editMode])
 
   // Generate edges
   const initialEdges: Edge[] = useMemo(() => {
@@ -149,6 +165,7 @@ export function KnowledgeGraphCanvas({
           style: {
             stroke: isPathToRootCause ? "hsl(var(--destructive))" : "hsl(var(--border))",
             strokeWidth: isPathToRootCause ? 2.5 : 1.5,
+            opacity: filterType !== "all" ? 0.3 : 1,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -160,19 +177,33 @@ export function KnowledgeGraphCanvas({
       })
     })
     return edges
-  }, [activeRootCauseId, isAnalyzing])
+  }, [activeRootCauseId, isAnalyzing, filterType])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
-  // Update when activeRootCauseId changes
+  // Update when activeRootCauseId or filter changes
   useEffect(() => {
-    setNodes(initialNodes)
-    setEdges(initialEdges)
-  }, [initialNodes, initialEdges, setNodes, setEdges])
+    if (!editMode) {
+      setNodes(initialNodes)
+      setEdges(initialEdges)
+    }
+  }, [initialNodes, initialEdges, setNodes, setEdges, editMode])
+
+  // Handle edge connections in edit mode
+  const onConnect = useCallback(
+    (params: Connection) => {
+      if (editMode) {
+        setEdges((eds) => addEdge({ ...params, type: "smoothstep" }, eds))
+      }
+    },
+    [editMode, setEdges]
+  )
 
   const handleNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
+      if (editMode) return // 수정 모드에서는 클릭 이벤트 무시
+
       const kNode = knowledgeNodes.find((n) => n.id === node.id)
       if (kNode) {
         let nodeType: "standard" | "mastered" | "missing" = "standard"
@@ -187,8 +218,59 @@ export function KnowledgeGraphCanvas({
         })
       }
     },
-    [onNodeClick, activeRootCauseId]
+    [onNodeClick, activeRootCauseId, editMode]
   )
+
+  // 수정 모드 진입
+  const enterEditMode = () => {
+    setSavedNodes([...nodes])
+    setSavedEdges([...edges])
+    setEditMode(true)
+  }
+
+  // 수정 저장
+  const saveChanges = () => {
+    setSavedNodes(null)
+    setSavedEdges(null)
+    setEditMode(false)
+    // TODO: AI 연동 - 변경된 노드/엣지 정보를 서버에 저장
+  }
+
+  // 수정 취소
+  const cancelChanges = () => {
+    if (savedNodes && savedEdges) {
+      setNodes(savedNodes)
+      setEdges(savedEdges)
+    }
+    setSavedNodes(null)
+    setSavedEdges(null)
+    setEditMode(false)
+  }
+
+  // 노드 추가
+  const addNewNode = () => {
+    const newId = (Math.max(...nodes.map((n) => parseInt(n.id)), 0) + 1).toString()
+    const newNode: Node = {
+      id: newId,
+      type: "concept",
+      position: { x: 400, y: 500 },
+      data: {
+        label: `새 개념 ${newId}`,
+        nodeType: "standard",
+        description: "새로운 개념",
+        isFiltered: false,
+        editMode: true,
+      },
+      draggable: true,
+    }
+    setNodes((nds) => [...nds, newNode])
+  }
+
+  // AI 정리 요청
+  const requestAiOrganize = () => {
+    setShowAiSuggestion(true)
+    // TODO: AI 연동 - AI가 노드 위치와 연결을 분석하여 최적화된 배치 제안
+  }
 
   const analysisSteps = [
     "문제를 관련 개념에 매핑 중...",
@@ -197,28 +279,39 @@ export function KnowledgeGraphCanvas({
     "결손 개념 확정 완료",
   ]
 
+  // 필터 토글
+  const toggleFilter = (type: "mastered" | "standard" | "missing") => {
+    setFilterType((prev) => (prev === type ? "all" : type))
+  }
+
   return (
-    <div className="flex-1 h-full max-md:hidden relative">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
-        minZoom={0.5}
-        maxZoom={1.5}
-        className="bg-muted/30"
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
-        <Controls
-          className="!bg-card !border-border !rounded-xl !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!rounded-lg [&>button:hover]:!bg-muted"
-          showInteractive={false}
-        />
-      </ReactFlow>
+    <div className="flex-1 h-full w-full relative">
+      <div style={{ width: "100%", height: "100%" }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={editMode ? onNodesChange : undefined}
+          onEdgesChange={editMode ? onEdgesChange : undefined}
+          onConnect={onConnect}
+          onNodeClick={handleNodeClick}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+          minZoom={0.5}
+          maxZoom={1.5}
+          className="bg-muted/30"
+          proOptions={{ hideAttribution: true }}
+          nodesDraggable={editMode}
+          nodesConnectable={editMode}
+          elementsSelectable={!editMode}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="hsl(var(--border))" />
+          <Controls
+            className="!bg-card !border-border !rounded-xl !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!rounded-lg [&>button:hover]:!bg-muted"
+            showInteractive={false}
+          />
+        </ReactFlow>
+      </div>
 
       {/* Analysis Progress Overlay */}
       {isAnalyzing && (
@@ -257,31 +350,106 @@ export function KnowledgeGraphCanvas({
         </div>
       )}
 
-      {/* Title */}
-      <div className="absolute top-4 left-4 z-10">
+      {/* Title & Edit Mode Controls */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
         <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl px-4 py-3 shadow-lg">
           <h2 className="text-base font-bold text-foreground">지식 그래프</h2>
           <p className="text-xs text-muted-foreground">기초 선형대수학</p>
         </div>
+
+        {editMode ? (
+          <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-2 shadow-lg flex gap-2">
+            <Button size="sm" variant="outline" onClick={addNewNode}>
+              <Plus className="h-4 w-4 mr-1" />
+              노드 추가
+            </Button>
+            <Button size="sm" variant="outline" onClick={requestAiOrganize}>
+              <Sparkles className="h-4 w-4 mr-1" />
+              AI 정리
+            </Button>
+            <Button size="sm" variant="default" onClick={saveChanges}>
+              <Save className="h-4 w-4 mr-1" />
+              저장
+            </Button>
+            <Button size="sm" variant="ghost" onClick={cancelChanges}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            className="bg-card/95 backdrop-blur-sm border-border shadow-lg w-fit"
+            onClick={enterEditMode}
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            수정 모드
+          </Button>
+        )}
       </div>
 
-      {/* Legend */}
+      {/* Legend with Filter */}
       <div className="absolute top-4 right-4 z-10">
         <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-3 shadow-lg space-y-2">
-          <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={() => toggleFilter("mastered")}
+            className={cn(
+              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
+              filterType === "mastered" ? "bg-primary/15" : "hover:bg-muted"
+            )}
+          >
             <div className="w-3 h-3 rounded-full bg-primary" />
             <span className="text-muted-foreground">완료된 개념</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
+          </button>
+          <button
+            onClick={() => toggleFilter("standard")}
+            className={cn(
+              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
+              filterType === "standard" ? "bg-muted-foreground/15" : "hover:bg-muted"
+            )}
+          >
             <div className="w-3 h-3 rounded-full bg-muted-foreground/30 border border-border" />
             <span className="text-muted-foreground">학습 필요</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs">
+          </button>
+          <button
+            onClick={() => toggleFilter("missing")}
+            className={cn(
+              "flex items-center gap-2 text-xs w-full px-2 py-1 rounded-lg transition-colors",
+              filterType === "missing" ? "bg-destructive/15" : "hover:bg-muted"
+            )}
+          >
             <div className="w-3 h-3 rounded-full bg-destructive" />
             <span className="text-muted-foreground">결손 개념</span>
-          </div>
+          </button>
         </div>
       </div>
+
+      {/* AI Suggestion Bubble */}
+      {showAiSuggestion && (
+        <div className="absolute bottom-20 right-4 z-20 max-w-xs animate-in slide-in-from-bottom-4">
+          <div className="bg-card border border-border rounded-2xl p-4 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-primary/10 rounded-full shrink-0">
+                <MessageCircle className="h-4 w-4 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-foreground leading-relaxed">
+                  보니까 <strong>행렬식</strong> 개념에서 자주 막히시는 것 같아요! 
+                  <strong> 행렬 곱셈</strong>부터 차근차근 복습해볼까요?
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="default" className="h-8">
+                    네, 시작할게요
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => setShowAiSuggestion(false)}>
+                    나중에
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
