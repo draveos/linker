@@ -144,6 +144,12 @@ export function KnowledgeGraphCanvas({
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({ nodeId: null, nodeName: "" })
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
 
+  // 노드 삭제 요청 함수 (generateNodeData보다 먼저 정의)
+  // skipDeleteConfirm일 때도 먼저 confirm state로 설정 후 useEffect에서 처리
+  const requestDeleteNode = useCallback((nodeId: string, nodeName: string) => {
+    setDeleteConfirm({ nodeId, nodeName })
+  }, [])
+
   // Generate nodes - editMode 변경 시에도 위치 유지를 위해 분리
   const generateNodeData = useCallback((node: KnowledgeNode, currentEditMode: boolean) => {
     let nodeType: "standard" | "mastered" | "missing" = "standard"
@@ -161,7 +167,7 @@ export function KnowledgeGraphCanvas({
       editMode: currentEditMode,
       onDelete: requestDeleteNode,
     }
-  }, [activeRootCauseId, isAnalyzing, filterType])
+  }, [activeRootCauseId, isAnalyzing, filterType, requestDeleteNode])
 
   const initialNodes: Node[] = useMemo(() => {
     return knowledgeNodes.map((node) => ({
@@ -306,21 +312,19 @@ export function KnowledgeGraphCanvas({
     setNodes((nds) => [...nds, newNode])
   }
 
-  // 노드 삭제 요청
-  const requestDeleteNode = (nodeId: string, nodeName: string) => {
-    if (skipDeleteConfirm) {
-      confirmDeleteNode(nodeId)
-    } else {
-      setDeleteConfirm({ nodeId, nodeName })
-    }
-  }
-
   // 노드 삭제 확정
-  const confirmDeleteNode = (nodeId: string) => {
+  const confirmDeleteNode = useCallback((nodeId: string) => {
     setNodes((nds) => nds.filter((n) => n.id !== nodeId))
     setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
     setDeleteConfirm({ nodeId: null, nodeName: "" })
-  }
+  }, [setNodes, setEdges])
+
+  // skipDeleteConfirm이 true일 때 자동 삭제
+  useEffect(() => {
+    if (deleteConfirm.nodeId && skipDeleteConfirm) {
+      confirmDeleteNode(deleteConfirm.nodeId)
+    }
+  }, [deleteConfirm.nodeId, skipDeleteConfirm, confirmDeleteNode])
 
   // 삭제 취소
   const cancelDelete = () => {
