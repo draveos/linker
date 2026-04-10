@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Sparkles, Clock, BookOpen, BrainCircuit, Info, ChevronLeft, ChevronRight, FileText, Network, Trash2, Send, AlertTriangle, RotateCcw } from "lucide-react"
+import { Sparkles, Clock, BookOpen, BrainCircuit, Info, ChevronLeft, ChevronRight, FileText, Network, Trash2, Send, AlertTriangle, RotateCcw, Home } from "lucide-react"
 import type { ContextMessage, ValidateContextResponse } from "@/app/api/validate-context/route"
 import { MAX_CONTEXT_QUESTIONS as MAX_QUESTIONS } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,7 @@ interface LeftSidebarProps {
   onSelectAnalysis: (analysis: Analysis) => void
   onDeleteAnalysis: (id: string) => void
   graphDomain: string
+  onGoHome?: () => void
 }
 
 export function LeftSidebar({
@@ -42,6 +43,7 @@ export function LeftSidebar({
   onSelectAnalysis,
   onDeleteAnalysis,
   graphDomain,
+  onGoHome,
 }: LeftSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState<"error" | "generate">("error")
@@ -189,10 +191,19 @@ export function LeftSidebar({
             <div className="p-2.5 bg-primary rounded-xl shadow-lg shadow-primary/25">
               <BrainCircuit className="h-6 w-6 text-primary-foreground" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h1 className="text-xl font-bold tracking-tight text-foreground">Linker</h1>
               <p className="text-xs text-muted-foreground font-medium">AI 기반 오답 역추적 학습</p>
             </div>
+            {onGoHome && (
+              <button
+                onClick={onGoHome}
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="홈으로"
+              >
+                <Home className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
 

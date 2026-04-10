@@ -1,299 +1,302 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { BrainCircuit, ArrowRight, Network, Zap, GraduationCap, ChevronDown, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { LeftSidebar, type Analysis } from "@/components/left-sidebar"
-import { KnowledgeGraphCanvas, type SelectedNodeData, type KnowledgeNode } from "@/components/knowledge-graph-canvas"
-import { RemedyPanel, type SelectedNode, type AiRemedyContent } from "@/components/remedy-panel"
-import { Chatbot } from "@/components/chatbot"
-import type { AnalyzeErrorResponse } from "@/app/api/analyze-error/route"
-import type { GenerateGraphResponse } from "@/app/api/generate-graph/route"
 
-// 기본 선형대수학 그래프 (데모용 초기값)
-const DEFAULT_NODES: KnowledgeNode[] = [
-  { id: "1", label: "벡터", description: "벡터의 기본 개념과 연산", prerequisites: [], confidence: 1 },
-  { id: "2", label: "행렬", description: "행렬의 정의와 기본 연산", prerequisites: ["1"], confidence: 1 },
-  { id: "3", label: "행렬 곱셈", description: "행렬 간의 곱셈 연산", prerequisites: ["2"], confidence: 1 },
-  { id: "4", label: "행렬식", description: "행렬식(Determinant) 계산법", prerequisites: ["3"], confidence: 1 },
-  { id: "5", label: "역행렬", description: "역행렬의 존재 조건과 계산", prerequisites: ["4"], confidence: 1 },
-  { id: "6", label: "여인수 전개", description: "여인수를 이용한 행렬식 계산", prerequisites: ["4"], confidence: 1 },
-  { id: "7", label: "크래머 공식", description: "행렬식을 이용한 연립방정식 풀이", prerequisites: ["5", "6"], confidence: 1 },
-  { id: "8", label: "선형 변환", description: "행렬을 이용한 선형 변환", prerequisites: ["3"], confidence: 1 },
-  { id: "9", label: "고유값", description: "고유값과 고유벡터 계산", prerequisites: ["4", "8"], confidence: 1 },
-  { id: "10", label: "대각화", description: "행렬의 대각화", prerequisites: ["9"], confidence: 1 },
+function useReveal() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect() } },
+      { threshold: 0.15 }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  return { ref, visible }
+}
+
+const features = [
+  {
+    icon: Network,
+    title: "지식 그래프",
+    desc: "개념 간의 연결을 시각화합니다. 무엇을 알고 무엇이 부족한지 한눈에 파악하세요.",
+    color: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  },
+  {
+    icon: Zap,
+    title: "AI 근본 원인 분석",
+    desc: "오답의 근본 원인을 추적합니다. 표면적 실수가 아닌 핵심 결손 개념을 찾아냅니다.",
+    color: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  },
+  {
+    icon: GraduationCap,
+    title: "마이크로 러닝",
+    desc: "결손 개념을 3분 안에 복습합니다. 퀴즈와 설명으로 빠르게 이해를 다집니다.",
+    color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
+  },
 ]
 
-const DEFAULT_MASTERED = ["1", "2", "3"]
+const gallery = [
+  { label: "선형대수학", nodes: 10, mastery: 30, color: "from-blue-500 to-indigo-600" },
+  { label: "미적분학 기초", nodes: 6, mastery: 17, color: "from-emerald-500 to-teal-600" },
+  { label: "알고리즘", nodes: 8, mastery: 62, color: "from-orange-500 to-amber-600" },
+  { label: "확률통계", nodes: 9, mastery: 44, color: "from-purple-500 to-violet-600" },
+]
 
-export default function LinkerPage() {
-  const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analysisStep, setAnalysisStep] = useState(0)
-  const [inputText, setInputText] = useState("")
-  const [activeRootCause, setActiveRootCause] = useState<string | null>(null)
-  // nodeId별 AI 콘텐츠 캐시 - 다른 노드 눌러도 사라지지 않음
-  const [aiContentMap, setAiContentMap] = useState<Record<string, AiRemedyContent>>({})
-  const [graphNodes, setGraphNodes] = useState<KnowledgeNode[]>(DEFAULT_NODES)
-  const [masteredNodeIds, setMasteredNodeIds] = useState<string[]>(DEFAULT_MASTERED)
-  const [graphDomain, setGraphDomain] = useState("기초 선형대수학")
-  const [isGeneratingGraph, setIsGeneratingGraph] = useState(false)
-  const [graphToast, setGraphToast] = useState<{ status: "loading" | "success" | "error"; visible: boolean } | null>(null)
-  const [toastProgress, setToastProgress] = useState(0)
-  const progressTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
-  const hideTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
-
-  // 가짜 진행바 — 로딩 중 0→90% 증가, 완료 시 100%
-  useEffect(() => {
-    if (graphToast?.status === "loading") {
-      setToastProgress(0)
-      let current = 0
-      progressTimerRef.current = setInterval(() => {
-        current += Math.random() * 8 + 2
-        if (current >= 90) { current = 90; clearInterval(progressTimerRef.current) }
-        setToastProgress(current)
-      }, 250)
-    } else if (graphToast?.status === "success" || graphToast?.status === "error") {
-      clearInterval(progressTimerRef.current)
-      setToastProgress(100)
-      hideTimerRef.current = setTimeout(() => {
-        setGraphToast((t) => t ? { ...t, visible: false } : null)
-      }, 1500)
-    }
-    return () => {
-      clearInterval(progressTimerRef.current)
-      clearTimeout(hideTimerRef.current)
-    }
-  }, [graphToast?.status])
-
-  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([
-    {
-      id: "1",
-      title: "역행렬 계산 오류",
-      subject: "선형대수학",
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
-      rootCauseNodeId: "4",
-    },
-    {
-      id: "2",
-      title: "행렬식 부호 실수",
-      subject: "선형대수학",
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      rootCauseNodeId: "4",
-    },
-  ])
-
-  // 오답 분석 (AI 실제 연동)
-  const handleAnalyze = useCallback(async () => {
-    if (!inputText.trim()) return
-    setIsAnalyzing(true)
-    setAnalysisStep(0)
-    setSelectedNode(null)
-    setActiveRootCause(null)
-
-    try {
-      setAnalysisStep(1) // 개념 매핑 중
-
-      const response = await fetch("/api/analyze-error", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          errorText: inputText,
-          nodes: graphNodes,
-        }),
-      })
-
-      setAnalysisStep(2) // 풀이 분석 중
-
-      if (!response.ok) throw new Error("분석 API 오류")
-
-      const result: AnalyzeErrorResponse = await response.json()
-
-      setAnalysisStep(3) // 결손 개념 확정
-
-      await new Promise((r) => setTimeout(r, 500)) // 애니메이션용 짧은 딜레이
-
-      setIsAnalyzing(false)
-      setAnalysisStep(0)
-      setActiveRootCause(result.rootCauseNodeId)
-
-      // AI 콘텐츠를 nodeId 키로 캐싱 - 다른 노드 눌렀다 돌아와도 유지됨
-      setAiContentMap((prev) => ({
-        ...prev,
-        [result.rootCauseNodeId]: {
-          explanation: result.explanation,
-          microLearning: result.microLearning,
-          confidence: result.confidence,
-          traversalPath: result.traversalPath,
-        },
-      }))
-
-      // 결손 노드 자동 선택 → 패널 오픈
-      const rootNode = graphNodes.find((n) => n.id === result.rootCauseNodeId)
-      if (rootNode) {
-        setSelectedNode({
-          id: rootNode.id,
-          label: rootNode.label,
-          type: "missing",
-          description: rootNode.description,
-        })
-      }
-
-      // 분석 기록 추가
-      const newAnalysis: Analysis = {
-        id: Date.now().toString(),
-        title: result.rootCauseLabel + " 결손 탐지",
-        subject: graphDomain,
-        timestamp: new Date(),
-        rootCauseNodeId: result.rootCauseNodeId,
-      }
-      setRecentAnalyses((prev) => [newAnalysis, ...prev.slice(0, 4)])
-    } catch (error) {
-      console.error("분석 오류:", error)
-      setIsAnalyzing(false)
-      setAnalysisStep(0)
-    }
-  }, [inputText, graphNodes, graphDomain])
-
-  // 강의 텍스트로 그래프 생성
-  const handleGenerateGraph = useCallback(async (lectureText: string, domain: string) => {
-    setIsGeneratingGraph(true)
-    setActiveRootCause(null)
-    setSelectedNode(null)
-    setAiContentMap({})
-    setGraphToast({ status: "loading", visible: true })
-
-    try {
-      const response = await fetch("/api/generate-graph", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lectureText, domain }),
-      })
-
-      if (!response.ok) throw new Error("그래프 생성 API 오류")
-
-      const result: GenerateGraphResponse = await response.json()
-      setGraphNodes(result.nodes)
-      setGraphDomain(result.domain)
-      setMasteredNodeIds([])
-      setGraphToast({ status: "success", visible: true })
-    } catch (error) {
-      console.error("그래프 생성 오류:", error)
-      setGraphToast({ status: "error", visible: true })
-    } finally {
-      setIsGeneratingGraph(false)
-    }
-  }, [])
-
-  const handleNodeClick = useCallback(
-    (node: SelectedNodeData) => {
-      setSelectedNode({
-        id: node.id,
-        label: node.label,
-        type: node.type,
-        description: node.description,
-      })
-    },
-    []
-  )
-
-  const handleClosePanel = useCallback(() => {
-    setSelectedNode(null)
-  }, [])
-
-  const handleSelectAnalysis = useCallback(
-    (analysis: Analysis) => {
-      if (analysis.rootCauseNodeId) {
-        setActiveRootCause(analysis.rootCauseNodeId)
-        const rootNode = graphNodes.find((n) => n.id === analysis.rootCauseNodeId)
-        if (rootNode) {
-          setSelectedNode({
-            id: rootNode.id,
-            label: rootNode.label,
-            type: "missing",
-            description: rootNode.description,
-          })
-        }
-      }
-    },
-    [graphNodes]
-  )
-
-  const handleMarkMastered = useCallback((nodeId: string) => {
-    setMasteredNodeIds((prev) =>
-      prev.includes(nodeId) ? prev.filter((id) => id !== nodeId) : [...prev, nodeId]
-    )
-    setSelectedNode(null)
-    setActiveRootCause(null)
-  }, [])
-
-  const handleDeleteAnalysis = useCallback((id: string) => {
-    setRecentAnalyses((prev) => prev.filter((a) => a.id !== id))
-  }, [])
+export default function LandingPage() {
+  const hero = useReveal()
+  const featRef = useReveal()
+  const galleryRef = useReveal()
+  const ctaRef = useReveal()
 
   return (
-    <div className="flex h-screen w-screen bg-background overflow-hidden">
-      <LeftSidebar
-        inputText={inputText}
-        setInputText={setInputText}
-        isAnalyzing={isAnalyzing}
-        analysisStep={analysisStep}
-        onAnalyze={handleAnalyze}
-        onGenerateGraph={handleGenerateGraph}
-        isGeneratingGraph={isGeneratingGraph}
-        recentAnalyses={recentAnalyses}
-        onSelectAnalysis={handleSelectAnalysis}
-        onDeleteAnalysis={handleDeleteAnalysis}
-        graphDomain={graphDomain}
-      />
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      {/* ── Navbar ── */}
+      <nav className="fixed top-0 inset-x-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-primary rounded-lg shadow-md shadow-primary/20">
+              <BrainCircuit className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <span className="text-lg font-bold tracking-tight">Linker</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/login"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5"
+            >
+              로그인
+            </Link>
+            <Link
+              href="/signup"
+              className="text-sm bg-primary text-primary-foreground px-4 py-2 rounded-xl font-medium hover:bg-primary/90 shadow-md shadow-primary/20 transition-all"
+            >
+              무료로 시작하기
+            </Link>
+          </div>
+        </div>
+      </nav>
 
-      <main className="flex-1 h-full w-full min-w-0">
-        <KnowledgeGraphCanvas
-          onNodeClick={handleNodeClick}
-          selectedNodeId={selectedNode?.id}
-          activeRootCauseId={activeRootCause}
-          isAnalyzing={isAnalyzing}
-          analysisStep={analysisStep}
-          nodes={graphNodes}
-          masteredNodeIds={masteredNodeIds}
-          domain={graphDomain}
-        />
-      </main>
+      {/* ── Hero ── */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center text-center px-6 pt-16">
+        {/* Background gradient blobs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
+        </div>
 
-      <RemedyPanel
-        selectedNode={selectedNode}
-        onClose={handleClosePanel}
-        aiContent={selectedNode ? (aiContentMap[selectedNode.id] ?? null) : null}
-        onMarkMastered={handleMarkMastered}
-      />
+        <div
+          ref={hero.ref}
+          className={cn(
+            "relative z-10 transition-all duration-700",
+            hero.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+          )}
+        >
+          <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-4 py-1.5 text-sm text-primary font-medium mb-8">
+            <Zap className="h-3.5 w-3.5" />
+            AI 기반 학습 격차 분석
+          </div>
 
-      <Chatbot graphNodes={graphNodes} graphDomain={graphDomain} />
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight leading-tight mb-6">
+            오답의 <span className="text-primary">근본 원인</span>을<br />찾아드립니다.
+          </h1>
 
-      {/* 그래프 생성 토스트 */}
-      {graphToast && (
-        <div className={cn(
-          "fixed bottom-5 left-1/2 -translate-x-1/2 z-50 transition-all duration-500",
-          graphToast.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
-        )}>
-          <div className="bg-card border border-border rounded-xl shadow-lg px-4 py-2.5 min-w-[200px] space-y-1.5">
-            <p className="text-xs font-medium text-foreground">
-              {graphToast.status === "loading" && "그래프 생성 중..."}
-              {graphToast.status === "success" && "그래프 생성 완료"}
-              {graphToast.status === "error" && "생성에 실패했습니다"}
-            </p>
-            <div className="h-1 w-full bg-muted rounded-full overflow-hidden">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all duration-300 ease-out",
-                  graphToast.status === "loading" && "bg-primary",
-                  graphToast.status === "success" && "bg-green-500",
-                  graphToast.status === "error" && "bg-destructive",
-                )}
-                style={{ width: `${toastProgress}%` }}
-              />
+          <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-10">
+            Linker는 AI 지식 그래프로 학생의 오답을 분석하고,<br className="hidden sm:block" />
+            표면적 실수가 아닌 결손 개념을 정확히 추적합니다.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <Link
+              href="/signup"
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-7 py-3.5 rounded-2xl font-semibold text-base hover:bg-primary/90 shadow-xl shadow-primary/30 transition-all hover:scale-105"
+            >
+              지금 시작하기 <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/login"
+              className="flex items-center gap-2 border border-border px-7 py-3.5 rounded-2xl font-medium text-base hover:bg-muted transition-colors"
+            >
+              데모 보기
+            </Link>
+          </div>
+        </div>
+
+        {/* Scroll indicator */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-muted-foreground animate-bounce">
+          <span className="text-xs">스크롤</span>
+          <ChevronDown className="h-4 w-4" />
+        </div>
+      </section>
+
+      {/* ── Video / App preview ── */}
+      <section className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="relative rounded-3xl overflow-hidden border border-border shadow-2xl bg-muted aspect-video group cursor-pointer">
+            {/* Placeholder — 실제 영상으로 교체 예정 */}
+            <video
+              className="w-full h-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              poster=""
+            >
+              {/* <source src="/demo.mp4" type="video/mp4" /> */}
+            </video>
+
+            {/* Overlay — 영상 없을 때 보임 */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-blue-600/20 flex flex-col items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xl">
+                <Play className="h-8 w-8 text-white ml-1" />
+              </div>
+              <p className="text-white/80 text-sm mt-4 font-medium">데모 영상 (준비 중)</p>
+            </div>
+
+            {/* Floating badge */}
+            <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-full font-medium">
+              LIVE DEMO
             </div>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* ── Features ── */}
+      <section className="py-20 px-6 bg-muted/30">
+        <div className="max-w-6xl mx-auto">
+          <div
+            ref={featRef.ref}
+            className={cn(
+              "text-center mb-14 transition-all duration-700",
+              featRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            )}
+          >
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+              어떻게 작동하나요?
+            </h2>
+            <p className="text-muted-foreground max-w-xl mx-auto text-base">
+              세 단계로 학습 격차를 분석하고 정확한 복습을 제공합니다.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {features.map((f, i) => {
+              const Icon = f.icon
+              return (
+                <div
+                  key={f.title}
+                  className={cn(
+                    "bg-card border border-border rounded-2xl p-7 transition-all duration-700",
+                    featRef.visible
+                      ? "opacity-100 translate-y-0"
+                      : "opacity-0 translate-y-8",
+                  )}
+                  style={{ transitionDelay: `${i * 120}ms` }}
+                >
+                  <div className={cn("w-12 h-12 rounded-2xl border flex items-center justify-center mb-5", f.color)}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground mb-2">{f.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Gallery — graph preview cards ── */}
+      <section className="py-20 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div
+            ref={galleryRef.ref}
+            className={cn(
+              "text-center mb-14 transition-all duration-700",
+              galleryRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            )}
+          >
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+              다양한 과목 지원
+            </h2>
+            <p className="text-muted-foreground max-w-xl mx-auto text-base">
+              수학, 과학, 공학 전 과목에 걸쳐 개인화 지식 그래프를 생성합니다.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {gallery.map((g, i) => (
+              <div
+                key={g.label}
+                className={cn(
+                  "rounded-2xl p-6 bg-gradient-to-br text-white transition-all duration-700 hover:-translate-y-1 hover:shadow-xl",
+                  g.color,
+                  galleryRef.visible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+                )}
+                style={{ transitionDelay: `${i * 80}ms` }}
+              >
+                <p className="text-white/70 text-xs font-medium mb-1">{g.nodes}개 개념</p>
+                <h4 className="font-bold text-base leading-tight mb-4">{g.label}</h4>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs text-white/70">
+                    <span>숙련도</span><span>{g.mastery}%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-white/70 rounded-full transition-all duration-1000"
+                      style={{ width: galleryRef.visible ? `${g.mastery}%` : "0%" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section className="py-24 px-6 bg-gradient-to-br from-primary to-primary/70">
+        <div
+          ref={ctaRef.ref}
+          className={cn(
+            "max-w-2xl mx-auto text-center transition-all duration-700",
+            ctaRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+          )}
+        >
+          <h2 className="text-4xl font-extrabold text-primary-foreground tracking-tight mb-4">
+            지금 시작하세요
+          </h2>
+          <p className="text-primary-foreground/80 text-lg mb-10">
+            무료로 가입하고 AI 지식 그래프 학습을 경험하세요.
+          </p>
+          <Link
+            href="/signup"
+            className="inline-flex items-center gap-2 bg-white text-primary px-8 py-4 rounded-2xl font-bold text-base hover:bg-white/90 shadow-2xl transition-all hover:scale-105"
+          >
+            무료로 시작하기 <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="border-t border-border py-8 px-6">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-primary rounded-md">
+              <BrainCircuit className="h-4 w-4 text-primary-foreground" />
+            </div>
+            <span className="font-bold text-sm text-foreground">Linker</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            © 2025 Linker. AI-Powered Knowledge Graph Learning.
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }

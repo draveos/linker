@@ -69,6 +69,7 @@ interface KnowledgeGraphCanvasProps {
   nodes: KnowledgeNode[]
   masteredNodeIds: string[]
   domain: string
+  traversalPath?: string[] | null
 }
 
 interface DeleteConfirmState {
@@ -141,8 +142,9 @@ function resolveNodeType(
 }
 
 // SVG에서 CSS 변수(hsl(var(...)))가 렌더 안 되는 경우 대비 → 직접 색상 사용
-const EDGE_COLOR_DEFAULT = "#94a3b8"   // slate-400
-const EDGE_COLOR_DANGER  = "#ef4444"   // red-500
+const EDGE_COLOR_DEFAULT  = "#94a3b8"  // slate-400
+const EDGE_COLOR_DANGER   = "#ef4444"  // red-500
+const EDGE_COLOR_TRAVERSE = "#f59e0b"  // amber-400
 
 function buildEdgeStyle(
     isPathToRootCause: boolean,
@@ -171,7 +173,8 @@ function buildEdgeStyle(
 
 function ConceptNode({ data, selected, id }: NodeProps) {
   const { editMode, onDeleteNode } = useContext(GraphEditContext)
-  const { label, nodeType, isAnalyzing, isFiltered } = data
+  const { label, nodeType, isAnalyzing, isFiltered, confidence } = data
+  const showAiBadge = confidence !== undefined && confidence < 0.8 && nodeType !== "mastered"
 
   return (
       <div className="relative group">
@@ -187,11 +190,17 @@ function ConceptNode({ data, selected, id }: NodeProps) {
             </button>
         )}
 
+        {showAiBadge && (
+          <div className="absolute -top-2 -left-2 z-10 bg-amber-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full leading-none shadow-sm whitespace-nowrap">
+            AI 추정
+          </div>
+        )}
+
         <div
             className={cn(
                 "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
                 nodeType === "mastered" &&
-                "bg-primary text-primary-foreground border-primary shadow-primary/25",
+                "bg-blue-500 text-white border-blue-500 shadow-blue-500/25",
                 nodeType === "standard" &&
                 "bg-card text-card-foreground border-border hover:border-primary/50",
                 nodeType === "missing" &&
@@ -309,6 +318,7 @@ export function KnowledgeGraphCanvas({
                                        nodes: knowledgeNodes,
                                        masteredNodeIds,
                                        domain,
+                                       traversalPath,
                                      }: KnowledgeGraphCanvasProps) {
   const [editMode, setEditMode] = useState(false)
   const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
@@ -320,7 +330,9 @@ export function KnowledgeGraphCanvas({
   })
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  const [traversalAnimEdges, setTraversalAnimEdges] = useState<Set<string>>(new Set())
   const errorTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  const traversalTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
   // 취소용 스냅샷 — ref로 보관해 불필요한 리렌더 방지
   const snapshotRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null)
@@ -582,6 +594,61 @@ export function KnowledgeGraphCanvas({
     setEditMode(false)
   }, [setNodes, setEdges])
 
+  // ── activeRootCauseId 변경 시 traversal 초기화 ──────────
+
+  useEffect(() => {
+    setTraversalAnimEdges(new Set())
+    clearTimeout(traversalTimerRef.current)
+  }, [activeRootCauseId])
+
+  // ── Traversal 경로 애니메이션 ────────────────────────────
+
+  useEffect(() => {
+    clearTimeout(traversalTimerRef.current)
+    setTraversalAnimEdges(new Set())
+
+    if (!traversalPath || traversalPath.length < 2) return
+
+    // 경로 노드 ID 배열 → 엣지 ID 배열
+    const edgeSequence: string[] = []
+    for (let i = 0; i < traversalPath.length - 1; i++) {
+      edgeSequence.push(`${traversalPath[i]}-${traversalPath[i + 1]}`)
+    }
+
+    let idx = 0
+    const step = () => {
+      if (idx >= edgeSequence.length) return
+      const edgeId = edgeSequence[idx]
+      setTraversalAnimEdges((prev) => new Set([...prev, edgeId]))
+      idx++
+      traversalTimerRef.current = setTimeout(step, 500)
+    }
+
+    traversalTimerRef.current = setTimeout(step, 300)
+    return () => clearTimeout(traversalTimerRef.current)
+  }, [traversalPath])
+
+  // traversalAnimEdges 변경 시 해당 엣지를 amber 애니메이션으로 업데이트
+  useEffect(() => {
+    if (traversalAnimEdges.size === 0) return
+    setEdges((eds) =>
+      eds.map((e) => {
+        if (!traversalAnimEdges.has(e.id)) return e
+        return {
+          ...e,
+          style: { stroke: EDGE_COLOR_TRAVERSE, strokeWidth: 2.5, opacity: 1 },
+          animated: true,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: EDGE_COLOR_TRAVERSE,
+            width: 16,
+            height: 16,
+          },
+        }
+      })
+    )
+  }, [traversalAnimEdges, setEdges])
+
   // ── 노드 추가 ────────────────────────────────────────────
 
   const addNewNode = useCallback(() => {
@@ -773,7 +840,7 @@ export function KnowledgeGraphCanvas({
             <div className="bg-card/95 backdrop-blur-sm border border-border rounded-xl p-3 shadow-lg space-y-2">
               {(
                   [
-                    { key: "mastered", color: "bg-primary", label: "완료된 개념" },
+                    { key: "mastered", color: "bg-blue-500", label: "완료된 개념" },
                     { key: "standard", color: "bg-muted-foreground/30 border border-border", label: "학습 필요" },
                     { key: "missing", color: "bg-destructive", label: "결손 개념" },
                   ] as const
