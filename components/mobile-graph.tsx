@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import type { SelectedNode } from "@/app/page"
+import type { SelectedNode } from "@/components/remedy-panel"
 
 interface MobileGraphProps {
   onNodeClick: (node: SelectedNode) => void
@@ -262,7 +262,7 @@ export function MobileGraph({
                       id: node.id,
                       label: node.label,
                       type: node.type,
-                      description: node.description,
+                      description: node.description ?? "",
                     })
                   }
                 }}

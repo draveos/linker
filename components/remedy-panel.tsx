@@ -13,9 +13,27 @@ export interface SelectedNode {
   description: string
 }
 
+export interface AiRemedyContent {
+  explanation: string
+  microLearning: {
+    title: string
+    content: string
+    summary: string
+    quiz: {
+      question: string
+      options: string[]
+      answerIndex: number
+    }
+  }
+  confidence: number
+  traversalPath: string[]
+}
+
 interface RemedyPanelProps {
   selectedNode: SelectedNode | null
   onClose: () => void
+  aiContent?: AiRemedyContent | null
+  onMarkMastered?: (nodeId: string) => void
 }
 
 // 마이크로 러닝 콘텐츠 (기획서: 3분 분량)
@@ -114,7 +132,7 @@ const defaultContent = {
   }
 }
 
-export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
+export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }: RemedyPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
@@ -130,7 +148,28 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
   }, [selectedNode?.id])
 
   const isOpen = selectedNode !== null
-  const content = selectedNode ? (nodeContent[selectedNode.id] || defaultContent) : null
+
+  // AI 생성 콘텐츠 우선 사용, 없으면 하드코딩 fallback
+  const staticContent = selectedNode ? (nodeContent[selectedNode.id] || defaultContent) : null
+  const content = aiContent
+    ? {
+        explanation: aiContent.explanation,
+        videoTitle: aiContent.microLearning.title,
+        videoDuration: "3분",
+        summary: aiContent.microLearning.summary,
+        prerequisites: [],
+        microLearningContent: aiContent.microLearning.content,
+        quiz: {
+          question: aiContent.microLearning.quiz.question,
+          options: aiContent.microLearning.quiz.options,
+          answer: aiContent.microLearning.quiz.answerIndex,
+        },
+        confidence: aiContent.confidence,
+        traversalPath: aiContent.traversalPath,
+      }
+    : staticContent
+      ? { ...staticContent, microLearningContent: undefined, confidence: undefined, traversalPath: undefined }
+      : null
 
   const handleAnswerClick = (idx: number) => {
     setSelectedAnswer(idx)
@@ -213,21 +252,40 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
             <p className="text-sm text-foreground/80 leading-relaxed">{content.explanation}</p>
           </div>
 
-          {/* 3-Minute Micro-Learning Video - TODO: 실제 비디오 연동 필요 */}
+          {/* 3-Minute Micro-Learning */}
           <div>
-            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-              <GraduationCap className="h-4 w-4 text-muted-foreground" />
-              3분 마이크로 러닝
-            </h3>
-            <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-primary/10 to-background border border-border aspect-video group cursor-pointer hover:shadow-lg transition-shadow">
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-xl shadow-primary/30 group-hover:scale-110 transition-transform">
-                  <Play className="h-6 w-6 text-primary-foreground ml-1" />
-                </div>
-                <p className="text-sm font-medium text-foreground mt-3">{content.videoTitle}</p>
-                <p className="text-xs text-muted-foreground">{content.videoDuration}</p>
-              </div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <GraduationCap className="h-4 w-4 text-muted-foreground" />
+                3분 마이크로 러닝
+              </h3>
+              {content.confidence !== undefined && (
+                <span className={cn(
+                  "text-xs px-2 py-0.5 rounded-full font-medium",
+                  content.confidence >= 0.8
+                    ? "bg-primary/10 text-primary"
+                    : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                )}>
+                  {content.confidence >= 0.8 ? `신뢰도 ${Math.round(content.confidence * 100)}%` : "AI 추정됨"}
+                </span>
+              )}
             </div>
+            {content.microLearningContent ? (
+              <div className="rounded-xl bg-gradient-to-br from-primary/5 to-background border border-border p-4">
+                <p className="text-sm font-medium text-foreground mb-2">{content.videoTitle}</p>
+                <p className="text-sm text-foreground/80 leading-relaxed">{content.microLearningContent}</p>
+              </div>
+            ) : (
+              <div className="relative rounded-xl overflow-hidden bg-gradient-to-br from-primary/10 to-background border border-border aspect-video group cursor-pointer hover:shadow-lg transition-shadow">
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-xl shadow-primary/30 group-hover:scale-110 transition-transform">
+                    <Play className="h-6 w-6 text-primary-foreground ml-1" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mt-3">{content.videoTitle}</p>
+                  <p className="text-xs text-muted-foreground">{content.videoDuration}</p>
+                </div>
+              </div>
+            )}
             <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{content.summary}</p>
           </div>
 
@@ -251,7 +309,7 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
             </div>
           )}
 
-          {/* Quick Quiz - TODO: AI 연동으로 동적 퀴즈 생성 필요 */}
+          {/* Quick Quiz */}
           <div className="rounded-xl border border-border p-4 bg-muted/30">
             <h3 className="text-sm font-semibold text-foreground mb-3">확인 퀴즈</h3>
             <p className="text-sm text-foreground mb-3">{content.quiz.question}</p>
@@ -282,7 +340,10 @@ export function RemedyPanel({ selectedNode, onClose }: RemedyPanelProps) {
 
         {/* Footer */}
         <div className="p-5 border-t border-border bg-muted/30 shrink-0">
-          <Button className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium">
+          <Button
+            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium"
+            onClick={() => onMarkMastered && selectedNode && onMarkMastered(selectedNode.id)}
+          >
             학습 완료로 표시
             <ArrowRight className="h-4 w-4 ml-2" />
           </Button>

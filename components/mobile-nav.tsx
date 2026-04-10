@@ -13,7 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import type { Analysis } from "@/app/page"
+import type { Analysis } from "@/components/left-sidebar"
 
 interface MobileNavProps {
   inputText: string

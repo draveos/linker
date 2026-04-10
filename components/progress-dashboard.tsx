@@ -6,7 +6,7 @@ import { createPortal } from "react-dom"
 import { X, TrendingUp, BookOpen, CheckCircle2, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import type { Analysis } from "@/app/page"
+import type { Analysis } from "@/components/left-sidebar"
 
 interface ProgressDashboardProps {
   isOpen: boolean

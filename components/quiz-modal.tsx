@@ -6,7 +6,7 @@ import { createPortal } from "react-dom"
 import { X, CheckCircle, XCircle, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import type { SelectedNode } from "@/app/page"
+import type { SelectedNode } from "@/components/remedy-panel"
 
 interface QuizModalProps {
   isOpen: boolean
