@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { BrainCircuit, ArrowRight, Play, Grid3x3, Brain, BookOpen, Sparkles, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -20,6 +20,63 @@ function useReveal() {
     return () => obs.disconnect()
   }, [])
   return { ref, visible }
+}
+
+// ── Scroll-based roadmap progress hook ──
+function useRoadmapProgress(itemCount: number) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [progress, setProgress] = useState(0)
+  const [activeNodes, setActiveNodes] = useState<boolean[]>(new Array(itemCount).fill(false))
+  const [fadingNodes, setFadingNodes] = useState<boolean[]>(new Array(itemCount).fill(false))
+  const prevActiveRef = useRef<boolean[]>(new Array(itemCount).fill(false))
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!containerRef.current) return
+      
+      const rect = containerRef.current.getBoundingClientRect()
+      const windowHeight = window.innerHeight
+      
+      // Calculate how much of the section is visible
+      const sectionTop = rect.top
+      const sectionHeight = rect.height
+      
+      // Start when section enters viewport, complete when it's about to leave
+      const scrollProgress = Math.max(0, Math.min(1, 
+        (windowHeight * 0.6 - sectionTop) / (sectionHeight * 0.8)
+      ))
+      
+      setProgress(scrollProgress)
+      
+      // Calculate which nodes should be active based on progress
+      const newActiveNodes = new Array(itemCount).fill(false).map((_, i) => {
+        const nodeThreshold = (i + 0.5) / itemCount
+        return scrollProgress >= nodeThreshold
+      })
+      
+      // Detect nodes that just turned off (for fading effect)
+      const newFadingNodes = new Array(itemCount).fill(false).map((_, i) => {
+        return prevActiveRef.current[i] && !newActiveNodes[i]
+      })
+      
+      // Clear fading state after animation
+      if (newFadingNodes.some(f => f)) {
+        setTimeout(() => {
+          setFadingNodes(new Array(itemCount).fill(false))
+        }, 500)
+      }
+      
+      setFadingNodes(newFadingNodes)
+      setActiveNodes(newActiveNodes)
+      prevActiveRef.current = newActiveNodes
+    }
+
+    window.addEventListener("scroll", handleScroll)
+    handleScroll() // Initial check
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [itemCount])
+
+  return { containerRef, progress, activeNodes, fadingNodes }
 }
 
 // ── Features data (roadmap style) ──
@@ -73,83 +130,19 @@ const demoAreas = [
   { title: "개인화 학습 경로", badge: "Adaptive" },
 ]
 
-// ── 3D Carousel Component ──
+// ── Simple Carousel Component (arrows + dots only) ──
 function SubjectCarousel() {
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
-  const [startX, setStartX] = useState(0)
-  const [velocity, setVelocity] = useState(0)
-  const [lastX, setLastX] = useState(0)
-  const [lastTime, setLastTime] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<number | null>(null)
-
   const totalItems = subjects.length
   const visibleCount = 5
 
-  const handlePrev = useCallback(() => {
+  const handlePrev = () => {
     setCurrentIndex((prev) => (prev - 1 + totalItems) % totalItems)
-  }, [totalItems])
+  }
 
-  const handleNext = useCallback(() => {
+  const handleNext = () => {
     setCurrentIndex((prev) => (prev + 1) % totalItems)
-  }, [totalItems])
-
-  // Mouse/Touch drag handling
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
-    setIsDragging(true)
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX
-    setStartX(clientX)
-    setLastX(clientX)
-    setLastTime(Date.now())
-    setVelocity(0)
-    if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current)
-    }
   }
-
-  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDragging) return
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX
-    const now = Date.now()
-    const dt = now - lastTime
-    if (dt > 0) {
-      setVelocity((clientX - lastX) / dt)
-    }
-    setLastX(clientX)
-    setLastTime(now)
-  }
-
-  const handleDragEnd = () => {
-    if (!isDragging) return
-    setIsDragging(false)
-    
-    const diff = lastX - startX
-    const threshold = 50
-
-    // Apply momentum
-    if (Math.abs(velocity) > 0.5) {
-      const steps = Math.round(velocity * 3)
-      setCurrentIndex((prev) => {
-        let newIndex = prev - steps
-        while (newIndex < 0) newIndex += totalItems
-        return newIndex % totalItems
-      })
-    } else if (Math.abs(diff) > threshold) {
-      if (diff > 0) handlePrev()
-      else handleNext()
-    }
-  }
-
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") handlePrev()
-      if (e.key === "ArrowRight") handleNext()
-    }
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [handlePrev, handleNext])
 
   const getCardStyle = (index: number) => {
     let diff = index - currentIndex
@@ -169,10 +162,10 @@ function SubjectCarousel() {
     }
 
     const scale = 1 - absPos * 0.15
-    const translateX = diff * 120
-    const translateZ = -absPos * 100
-    const rotateY = diff * -8
-    const opacity = 1 - absPos * 0.3
+    const translateX = diff * 130
+    const translateZ = -absPos * 80
+    const rotateY = diff * -10
+    const opacity = 1 - absPos * 0.25
 
     return {
       transform: `translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${rotateY}deg) scale(${scale})`,
@@ -186,37 +179,29 @@ function SubjectCarousel() {
     <div className="relative w-full py-16">
       {/* 3D Carousel Container */}
       <div
-        ref={containerRef}
-        className="relative h-64 w-full cursor-grab active:cursor-grabbing select-none"
+        className="relative h-56 w-full select-none"
         style={{ perspective: "1200px" }}
-        onMouseDown={handleDragStart}
-        onMouseMove={handleDragMove}
-        onMouseUp={handleDragEnd}
-        onMouseLeave={handleDragEnd}
-        onTouchStart={handleDragStart}
-        onTouchMove={handleDragMove}
-        onTouchEnd={handleDragEnd}
       >
         <div className="absolute inset-0 flex items-center justify-center" style={{ transformStyle: "preserve-3d" }}>
           {subjects.map((subject, index) => (
             <div
               key={subject.label}
               className={cn(
-                "absolute w-64 h-48 rounded-2xl p-6 transition-all duration-500 ease-out",
+                "absolute w-56 h-40 rounded-2xl p-5 transition-all duration-500 ease-out",
                 "bg-gradient-to-br from-card to-muted border border-border",
-                "shadow-xl hover:shadow-2xl",
+                "shadow-xl",
                 index === currentIndex && "ring-2 ring-primary/50"
               )}
               style={getCardStyle(index)}
             >
               <div className="h-full flex flex-col justify-between">
                 <div>
-                  <h3 className="text-xl font-bold text-foreground mb-2">{subject.label}</h3>
-                  <p className="text-sm text-muted-foreground">{subject.desc}</p>
+                  <h3 className="text-lg font-bold text-foreground mb-1">{subject.label}</h3>
+                  <p className="text-xs text-muted-foreground">{subject.desc}</p>
                 </div>
-                <div className="flex items-center gap-2 text-primary text-sm font-medium">
+                <div className="flex items-center gap-1 text-primary text-xs font-medium">
                   <span>탐색하기</span>
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-3 w-3" />
                 </div>
               </div>
             </div>
@@ -224,27 +209,27 @@ function SubjectCarousel() {
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-center gap-4 mt-8">
+      {/* Navigation - Arrows + Dots only */}
+      <div className="flex items-center justify-center gap-4 mt-6">
         <button
           onClick={handlePrev}
-          className="p-3 rounded-full border border-border hover:bg-muted transition-colors"
+          className="p-3 rounded-full border border-border hover:bg-muted hover:border-primary/30 transition-all"
           aria-label="이전"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
         
         {/* Dots indicator */}
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           {subjects.map((_, index) => (
             <button
               key={index}
               onClick={() => setCurrentIndex(index)}
               className={cn(
-                "w-2 h-2 rounded-full transition-all",
+                "h-2 rounded-full transition-all duration-300",
                 index === currentIndex
                   ? "bg-primary w-6"
-                  : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                  : "bg-muted-foreground/30 hover:bg-muted-foreground/50 w-2"
               )}
               aria-label={`슬라이드 ${index + 1}`}
             />
@@ -253,7 +238,7 @@ function SubjectCarousel() {
 
         <button
           onClick={handleNext}
-          className="p-3 rounded-full border border-border hover:bg-muted transition-colors"
+          className="p-3 rounded-full border border-border hover:bg-muted hover:border-primary/30 transition-all"
           aria-label="다음"
         >
           <ChevronRight className="h-5 w-5" />
@@ -263,11 +248,153 @@ function SubjectCarousel() {
   )
 }
 
+// ── Roadmap Section Component with Scroll Animation ──
+function RoadmapSection() {
+  const { containerRef, progress, activeNodes, fadingNodes } = useRoadmapProgress(capabilities.length)
+  const titleRef = useReveal()
+
+  return (
+    <section id="features" className="py-24 px-6 bg-muted/30">
+      <div className="max-w-5xl mx-auto">
+        <div
+          ref={titleRef.ref}
+          className={cn(
+            "text-center mb-20 transition-all duration-700",
+            titleRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+          )}
+        >
+          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
+            학습의 새로운 방식
+          </h2>
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+            학습 격차를 찾고 효과적으로 메우는 4단계 과정
+          </p>
+        </div>
+
+        {/* Roadmap with scroll-based lighting */}
+        <div ref={containerRef} className="relative">
+          {/* Background line (gray) */}
+          <div className="absolute left-8 top-8 bottom-8 w-0.5 bg-border hidden md:block" />
+          
+          {/* Progress line (animated, primary color) */}
+          <div 
+            className="absolute left-8 top-8 w-0.5 bg-gradient-to-b from-primary via-primary to-primary/50 hidden md:block transition-all duration-300 ease-out"
+            style={{ 
+              height: `calc(${Math.min(progress * 100, 100)}% - 64px)`,
+              boxShadow: progress > 0 ? '0 0 12px var(--primary), 0 0 24px var(--primary)' : 'none'
+            }}
+          />
+
+          <div className="space-y-12">
+            {capabilities.map((cap, i) => {
+              const Icon = cap.icon
+              const isActive = activeNodes[i]
+              const isFading = fadingNodes[i]
+              
+              return (
+                <div
+                  key={cap.title}
+                  className={cn(
+                    "relative flex gap-8 items-start transition-all duration-500",
+                    titleRef.visible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-8"
+                  )}
+                  style={{ transitionDelay: `${i * 100}ms` }}
+                >
+                  {/* Node circle with light-up effect */}
+                  <div className="relative z-10 flex-shrink-0">
+                    {/* Glow effect when active */}
+                    <div 
+                      className={cn(
+                        "absolute inset-0 rounded-full transition-all duration-500",
+                        isActive && "animate-ping-once"
+                      )}
+                      style={{
+                        background: isActive ? 'var(--primary)' : 'transparent',
+                        opacity: isActive ? 0.3 : 0,
+                        transform: isActive ? 'scale(1.5)' : 'scale(1)',
+                        filter: isActive ? 'blur(8px)' : 'none'
+                      }}
+                    />
+                    
+                    {/* Sparkle lines when lighting up */}
+                    {isActive && (
+                      <>
+                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-primary rounded-full animate-sparkle-up" />
+                        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-primary rounded-full animate-sparkle-down" />
+                        <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-3 h-0.5 bg-primary rounded-full animate-sparkle-left" />
+                        <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-3 h-0.5 bg-primary rounded-full animate-sparkle-right" />
+                      </>
+                    )}
+
+                    {/* Main node circle - WHITE background to cover line */}
+                    <div 
+                      className={cn(
+                        "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 border-2",
+                        isActive 
+                          ? "bg-primary border-primary shadow-lg shadow-primary/40" 
+                          : isFading
+                            ? "bg-card border-primary/50 animate-flicker"
+                            : "bg-card border-border"
+                      )}
+                    >
+                      <Icon 
+                        className={cn(
+                          "h-7 w-7 transition-all duration-500",
+                          isActive 
+                            ? "text-primary-foreground scale-110" 
+                            : "text-muted-foreground"
+                        )} 
+                      />
+                    </div>
+                    
+                    {/* Step number badge */}
+                    <div 
+                      className={cn(
+                        "absolute -top-2 -right-2 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center transition-all duration-500",
+                        isActive 
+                          ? "bg-white text-primary shadow-lg" 
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {cap.step}
+                    </div>
+                  </div>
+
+                  {/* Content card */}
+                  <div 
+                    className={cn(
+                      "flex-1 bg-card border rounded-2xl p-6 transition-all duration-500 group",
+                      isActive 
+                        ? "border-primary/50 shadow-lg shadow-primary/10" 
+                        : "border-border hover:border-primary/30"
+                    )}
+                  >
+                    <h3 
+                      className={cn(
+                        "text-xl font-bold mb-2 transition-colors duration-500",
+                        isActive ? "text-primary" : "text-foreground group-hover:text-primary"
+                      )}
+                    >
+                      {cap.title}
+                    </h3>
+                    <p className="text-muted-foreground leading-relaxed">
+                      {cap.desc}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // ── Main Landing Page ──
 export default function LandingPage() {
   const [heroLoaded, setHeroLoaded] = useState(false)
   const [heroTextVisible, setHeroTextVisible] = useState(false)
-  const capRef = useReveal()
   const demoRef = useReveal()
   const subjectsRef = useReveal()
   const ctaRef = useReveal()
@@ -486,73 +613,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Features Section - Roadmap Style ── */}
-      <section id="features" className="py-24 px-6 bg-muted/30">
-        <div className="max-w-5xl mx-auto">
-          <div
-            ref={capRef.ref}
-            className={cn(
-              "text-center mb-20 transition-all duration-700",
-              capRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-            )}
-          >
-            <h2 className="text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-              학습의 새로운 방식
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              학습 격차를 찾고 효과적으로 메우는 4단계 과정
-            </p>
-          </div>
-
-          {/* Roadmap/Node style features */}
-          <div className="relative">
-            {/* Connecting line */}
-            <div 
-              className={cn(
-                "absolute left-8 top-0 bottom-0 w-px bg-gradient-to-b from-primary via-primary/50 to-transparent hidden md:block transition-all duration-1000",
-                capRef.visible ? "opacity-100" : "opacity-0"
-              )}
-            />
-
-            <div className="space-y-8">
-              {capabilities.map((cap, i) => {
-                const Icon = cap.icon
-                return (
-                  <div
-                    key={cap.title}
-                    className={cn(
-                      "relative flex gap-8 items-start transition-all duration-700",
-                      capRef.visible ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-8"
-                    )}
-                    style={{ transitionDelay: `${i * 150}ms` }}
-                  >
-                    {/* Node circle */}
-                    <div className="relative z-10 flex-shrink-0">
-                      <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center shadow-lg shadow-primary/20">
-                        <Icon className="h-7 w-7 text-primary" />
-                      </div>
-                      {/* Step number */}
-                      <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
-                        {cap.step}
-                      </div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 bg-card border border-border rounded-2xl p-6 hover:border-primary/30 hover:shadow-lg transition-all group">
-                      <h3 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">
-                        {cap.title}
-                      </h3>
-                      <p className="text-muted-foreground leading-relaxed">
-                        {cap.desc}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── Features Section - Roadmap Style with Scroll Animation ── */}
+      <RoadmapSection />
 
       {/* ── Subjects Gallery - 3D Carousel ── */}
       <section className="py-24 px-6 bg-background overflow-hidden">

@@ -135,3 +135,54 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Custom Animations for Roadmap ── */
+
+/* Sparkle lines that shoot out when node lights up */
+@keyframes sparkle-up {
+  0% { transform: translateX(-50%) scaleY(0); opacity: 0; }
+  30% { transform: translateX(-50%) scaleY(1.5); opacity: 1; }
+  100% { transform: translateX(-50%) scaleY(0); opacity: 0; }
+}
+
+@keyframes sparkle-down {
+  0% { transform: translateX(-50%) scaleY(0); opacity: 0; }
+  30% { transform: translateX(-50%) scaleY(1.5); opacity: 1; }
+  100% { transform: translateX(-50%) scaleY(0); opacity: 0; }
+}
+
+@keyframes sparkle-left {
+  0% { transform: translateY(-50%) scaleX(0); opacity: 0; }
+  30% { transform: translateY(-50%) scaleX(1.5); opacity: 1; }
+  100% { transform: translateY(-50%) scaleX(0); opacity: 0; }
+}
+
+@keyframes sparkle-right {
+  0% { transform: translateY(-50%) scaleX(0); opacity: 0; }
+  30% { transform: translateY(-50%) scaleX(1.5); opacity: 1; }
+  100% { transform: translateY(-50%) scaleX(0); opacity: 0; }
+}
+
+/* Flicker effect when light turns off */
+@keyframes flicker {
+  0% { opacity: 1; border-color: var(--primary); }
+  20% { opacity: 0.7; border-color: var(--primary); }
+  40% { opacity: 0.9; border-color: var(--primary); }
+  60% { opacity: 0.5; border-color: var(--border); }
+  80% { opacity: 0.8; border-color: var(--border); }
+  100% { opacity: 1; border-color: var(--border); }
+}
+
+/* Pop effect when node activates */
+@keyframes ping-once {
+  0% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.8); opacity: 0.2; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.animate-sparkle-up { animation: sparkle-up 0.6s ease-out forwards; }
+.animate-sparkle-down { animation: sparkle-down 0.6s ease-out 0.1s forwards; }
+.animate-sparkle-left { animation: sparkle-left 0.6s ease-out 0.05s forwards; }
+.animate-sparkle-right { animation: sparkle-right 0.6s ease-out 0.15s forwards; }
+.animate-flicker { animation: flicker 0.5s ease-out forwards; }
+.animate-ping-once { animation: ping-once 0.7s ease-out forwards; }
