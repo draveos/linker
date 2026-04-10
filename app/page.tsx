@@ -316,16 +316,6 @@ function RoadmapSection() {
                       }}
                     />
                     
-                    {/* Sparkle lines when lighting up */}
-                    {isActive && (
-                      <>
-                        <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-primary rounded-full animate-sparkle-up" />
-                        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-primary rounded-full animate-sparkle-down" />
-                        <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-3 h-0.5 bg-primary rounded-full animate-sparkle-left" />
-                        <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-3 h-0.5 bg-primary rounded-full animate-sparkle-right" />
-                      </>
-                    )}
-
                     {/* Main node circle - WHITE background to cover line */}
                     <div 
                       className={cn(
