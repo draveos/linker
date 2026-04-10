@@ -276,11 +276,12 @@ function RoadmapSection() {
           {/* Background line (gray) */}
           <div className="absolute left-8 top-8 bottom-8 w-0.5 bg-border hidden md:block" />
           
-          {/* Progress line (animated, primary color) */}
+          {/* Progress line (animated, primary color) - stops at last node center */}
           <div 
             className="absolute left-8 top-8 w-0.5 bg-gradient-to-b from-primary via-primary to-primary/50 hidden md:block transition-all duration-300 ease-out"
             style={{ 
-              height: `calc(${Math.min(progress * 100, 100)}% - 64px)`,
+              height: `calc(${Math.min(progress * 100, 100)}% - 80px)`,
+              maxHeight: 'calc(100% - 80px)',
               boxShadow: progress > 0 ? '0 0 12px var(--primary), 0 0 24px var(--primary)' : 'none'
             }}
           />
