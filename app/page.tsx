@@ -22,13 +22,42 @@ function useReveal() {
   return { ref, visible }
 }
 
-// ── Scroll-based roadmap progress hook ──
+// ── Scroll-based roadmap progress hook (smooth with RAF + lerp) ──
 function useRoadmapProgress(itemCount: number) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [progress, setProgress] = useState(0)
   const [activeNodes, setActiveNodes] = useState<boolean[]>(new Array(itemCount).fill(false))
   const [fadingNodes, setFadingNodes] = useState<boolean[]>(new Array(itemCount).fill(false))
   const prevActiveRef = useRef<boolean[]>(new Array(itemCount).fill(false))
+  
+  // Smooth animation refs
+  const targetProgressRef = useRef(0)
+  const currentProgressRef = useRef(0)
+  const rafRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    // Smooth lerp animation loop
+    const animate = () => {
+      const diff = targetProgressRef.current - currentProgressRef.current
+      
+      // Lerp factor - higher = faster, lower = smoother
+      const lerp = 0.08
+      currentProgressRef.current += diff * lerp
+      
+      // Stop animating when close enough
+      if (Math.abs(diff) > 0.001) {
+        setProgress(currentProgressRef.current)
+      }
+      
+      rafRef.current = requestAnimationFrame(animate)
+    }
+    
+    rafRef.current = requestAnimationFrame(animate)
+    
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -46,7 +75,8 @@ function useRoadmapProgress(itemCount: number) {
         (windowHeight * 0.6 - sectionTop) / (sectionHeight * 0.8)
       ))
       
-      setProgress(scrollProgress)
+      // Update target (actual progress follows smoothly via RAF)
+      targetProgressRef.current = scrollProgress
       
       // Calculate which nodes should be active based on progress
       const newActiveNodes = new Array(itemCount).fill(false).map((_, i) => {
@@ -71,7 +101,7 @@ function useRoadmapProgress(itemCount: number) {
       prevActiveRef.current = newActiveNodes
     }
 
-    window.addEventListener("scroll", handleScroll)
+    window.addEventListener("scroll", handleScroll, { passive: true })
     handleScroll() // Initial check
     return () => window.removeEventListener("scroll", handleScroll)
   }, [itemCount])
