@@ -273,8 +273,8 @@ function RoadmapSection() {
 
         {/* Roadmap with scroll-based lighting */}
         <div ref={containerRef} className="relative">
-          {/* Background line (gray) */}
-          <div className="absolute left-8 top-8 bottom-8 w-0.5 bg-border hidden md:block" />
+          {/* Background line (gray) - stops at last node center */}
+          <div className="absolute left-8 top-8 w-0.5 bg-border hidden md:block" style={{ height: 'calc(100% - 80px)' }} />
           
           {/* Progress line (animated, primary color) - stops at last node center */}
           <div 
