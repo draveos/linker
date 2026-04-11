@@ -755,9 +755,22 @@ function SubjectCarousel() {
                       <h3 className="text-lg font-bold text-foreground mb-1 leading-tight">{subject.label}</h3>
                       <p className="text-xs text-muted-foreground leading-snug">{subject.desc}</p>
                     </div>
-                    <div className={cn("flex items-center gap-1 text-xs font-medium", colors.linkColor)}>
-                      <span>탐색하기</span>
-                      <ArrowRight className="h-3 w-3" />
+                    {/* Hashtags — 탐색하기 대신 주제 1-2개 */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {subject.desc
+                        .split(",")
+                        .slice(0, 2)
+                        .map((tag) => (
+                          <span
+                            key={tag}
+                            className={cn(
+                              "text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted/50 border border-border",
+                              colors.linkColor
+                            )}
+                          >
+                            #{tag.trim()}
+                          </span>
+                        ))}
                     </div>
                   </div>
                 </div>
@@ -968,15 +981,6 @@ export default function LandingPage() {
               <span className="text-base font-bold tracking-tight text-white">Linker</span>
             </Link>
 
-            <div className="hidden md:flex items-center gap-8 text-sm">
-              <Link href="#features" className="text-white/70 hover:text-white transition-colors">
-                기능
-              </Link>
-              <Link href="#demo" className="text-white/70 hover:text-white transition-colors">
-                데모
-              </Link>
-            </div>
-
             <div className="flex items-center gap-2">
               <Link
                   href="/login"
@@ -1010,6 +1014,7 @@ export default function LandingPage() {
                 muted
                 playsInline
                 preload="metadata"
+                suppressHydrationWarning
                 className="absolute inset-0 w-full h-full object-cover"
             >
               <source src="/hero_thumbnale.mp4" type="video/mp4" />
@@ -1155,6 +1160,7 @@ export default function LandingPage() {
                           muted
                           playsInline
                           preload="metadata"
+                          suppressHydrationWarning
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                       />
 
@@ -1173,16 +1179,12 @@ export default function LandingPage() {
 
                         {/* Text bottom */}
                         <div className="space-y-1.5">
-                          <h3 className="text-2xl font-bold text-white leading-tight group-hover:text-primary transition-colors">
+                          <h3 className="text-2xl font-bold text-white leading-tight">
                             {demo.title}
                           </h3>
                           <p className="text-sm text-white/75 leading-snug max-w-sm">
                             {demo.subtitle}
                           </p>
-                          <div className="flex items-center gap-1 text-primary text-xs font-medium pt-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                            <span>자세히 보기</span>
-                            <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -1254,7 +1256,7 @@ export default function LandingPage() {
               <span className="font-bold">Linker</span>
             </Link>
             <p className="text-xs text-muted-foreground">
-              © 2025 Linker. AI 기반 지식 그래프 학습 플랫폼.
+              © 2026 Linker. AI 기반 지식 그래프 학습 플랫폼.
             </p>
           </div>
         </footer>

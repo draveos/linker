@@ -4,8 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   Plus, BrainCircuit, BookOpen, ChevronRight, Trash2, BarChart2,
-  Clock, LogOut, Eye, Sparkles, Send, RotateCcw, AlertTriangle,
-  X, FileText, Network, GraduationCap,
+  Clock, LogOut, Sparkles, Send, RotateCcw, AlertTriangle,
+  X, FileText, Network, GraduationCap, ArrowRight,
+  Grid3x3, TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain,
+  type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -40,22 +42,79 @@ function trashDaysLeft(deletedAt: string) {
   return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)))
 }
 
-const DOMAIN_COLORS: Record<string, string> = {
-  "선형대수학": "from-blue-500/20 to-blue-600/10 border-blue-500/30",
-  "미적분학":   "from-emerald-500/20 to-emerald-600/10 border-emerald-500/30",
-  "확률통계":   "from-purple-500/20 to-purple-600/10 border-purple-500/30",
-  "알고리즘":   "from-orange-500/20 to-orange-600/10 border-orange-500/30",
-  "물리학":    "from-rose-500/20 to-rose-600/10 border-rose-500/30",
+// ── Domain → icon + color theme ────────────────────────────────
+// Tailwind 동적 클래스 방지를 위해 lookup 테이블
+
+type ThemeKey = "blue" | "purple" | "orange" | "pink" | "cyan" | "emerald" | "rose" | "amber" | "fuchsia" | "teal"
+
+const THEMES: Record<ThemeKey, {
+  gradient: string   // 카드 상단 그라데이션 배경
+  heroGradient: string  // Continue 카드용 더 진한 그라데이션
+  icon: string       // 아이콘 색
+  bar: string        // 프로그레스 바 색
+  ring: string       // mastery ring stroke
+}> = {
+  blue:    { gradient: "from-blue-500/15 via-blue-500/5 to-transparent",       heroGradient: "from-blue-500/20 via-sky-500/10 to-transparent",       icon: "text-blue-500",    bar: "bg-blue-500",    ring: "text-blue-500" },
+  purple:  { gradient: "from-purple-500/15 via-purple-500/5 to-transparent",   heroGradient: "from-purple-500/20 via-fuchsia-500/10 to-transparent", icon: "text-purple-500",  bar: "bg-purple-500",  ring: "text-purple-500" },
+  orange:  { gradient: "from-orange-500/15 via-orange-500/5 to-transparent",   heroGradient: "from-orange-500/20 via-amber-500/10 to-transparent",   icon: "text-orange-500",  bar: "bg-orange-500",  ring: "text-orange-500" },
+  pink:    { gradient: "from-pink-500/15 via-pink-500/5 to-transparent",       heroGradient: "from-pink-500/20 via-rose-500/10 to-transparent",     icon: "text-pink-500",    bar: "bg-pink-500",    ring: "text-pink-500" },
+  cyan:    { gradient: "from-cyan-500/15 via-cyan-500/5 to-transparent",       heroGradient: "from-cyan-500/20 via-sky-500/10 to-transparent",       icon: "text-cyan-500",    bar: "bg-cyan-500",    ring: "text-cyan-500" },
+  emerald: { gradient: "from-emerald-500/15 via-emerald-500/5 to-transparent", heroGradient: "from-emerald-500/20 via-green-500/10 to-transparent",  icon: "text-emerald-500", bar: "bg-emerald-500", ring: "text-emerald-500" },
+  rose:    { gradient: "from-rose-500/15 via-rose-500/5 to-transparent",       heroGradient: "from-rose-500/20 via-pink-500/10 to-transparent",      icon: "text-rose-500",    bar: "bg-rose-500",    ring: "text-rose-500" },
+  amber:   { gradient: "from-amber-500/15 via-amber-500/5 to-transparent",     heroGradient: "from-amber-500/20 via-yellow-500/10 to-transparent",   icon: "text-amber-600",   bar: "bg-amber-500",   ring: "text-amber-500" },
+  fuchsia: { gradient: "from-fuchsia-500/15 via-fuchsia-500/5 to-transparent", heroGradient: "from-fuchsia-500/20 via-purple-500/10 to-transparent", icon: "text-fuchsia-500", bar: "bg-fuchsia-500", ring: "text-fuchsia-500" },
+  teal:    { gradient: "from-teal-500/15 via-teal-500/5 to-transparent",       heroGradient: "from-teal-500/20 via-cyan-500/10 to-transparent",      icon: "text-teal-500",    bar: "bg-teal-500",    ring: "text-teal-500" },
 }
 
-function graphColor(domain: string) {
-  for (const key of Object.keys(DOMAIN_COLORS)) {
-    if (domain.includes(key)) return DOMAIN_COLORS[key]
-  }
-  return "from-primary/20 to-primary/10 border-primary/30"
+function getDomainStyle(domain: string): { icon: LucideIcon; theme: ThemeKey } {
+  const d = domain.toLowerCase()
+  if (d.includes("선형") || d.includes("대수") || d.includes("벡터") || d.includes("행렬")) return { icon: Grid3x3, theme: "blue" }
+  if (d.includes("미적") || d.includes("해석")) return { icon: TrendingUp, theme: "purple" }
+  if (d.includes("알고리") || d.includes("자료구조")) return { icon: GitBranch, theme: "orange" }
+  if (d.includes("확률") || d.includes("통계")) return { icon: BarChart3, theme: "pink" }
+  if (d.includes("물리")) return { icon: Atom, theme: "cyan" }
+  if (d.includes("화학")) return { icon: FlaskConical, theme: "emerald" }
+  if (d.includes("생물")) return { icon: Dna, theme: "emerald" }
+  if (d.includes("머신") || d.includes("ai") || d.includes("딥")) return { icon: Brain, theme: "fuchsia" }
+  if (d.includes("컴퓨터 구조") || d.includes("아키텍처")) return { icon: Cpu, theme: "rose" }
+  if (d.includes("운영체제") || d.includes("os") || d.includes("리눅스")) return { icon: Terminal, theme: "amber" }
+  if (d.includes("데이터베이스") || d.includes("sql")) return { icon: Database, theme: "amber" }
+  if (d.includes("네트워크")) return { icon: Network, theme: "teal" }
+  return { icon: BookOpen, theme: "purple" }   // fallback
 }
 
-// ── Graph Generate Modal ────────────────────────────────────────
+// ── Mastery Ring (원형 진도 게이지) ─────────────────────────────
+
+function MasteryRing({
+  percentage,
+  className,
+  strokeWidth = 6,
+}: {
+  percentage: number
+  className?: string
+  strokeWidth?: number
+}) {
+  const radius = 42
+  const circumference = 2 * Math.PI * radius
+  const clamped = Math.max(0, Math.min(100, percentage))
+  const offset = circumference - (clamped / 100) * circumference
+  return (
+    <svg className={className} viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} opacity="0.15" />
+      <circle
+        cx="50" cy="50" r={radius}
+        fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        transform="rotate(-90 50 50)"
+        strokeLinecap="round"
+        className="transition-[stroke-dashoffset] duration-700"
+      />
+    </svg>
+  )
+}
+
+// ── Graph Generate Modal ───────────────────────────────────────
 
 interface GenerateModalProps {
   onClose: () => void
@@ -84,15 +143,12 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
   const generateGraph = useCallback(async (enrichedContext: string, dom: string) => {
     setIsGenerating(true)
     setToastProgress(0)
-
-    // 가짜 진행바
     let p = 0
     progressRef.current = setInterval(() => {
       p += Math.random() * 10 + 3
       if (p >= 90) { p = 90; clearInterval(progressRef.current) }
       setToastProgress(p)
     }, 250)
-
     try {
       const res = await fetch("/api/generate-graph", {
         method: "POST",
@@ -171,9 +227,8 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg animate-in zoom-in-95 fade-in duration-200">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="p-1.5 bg-primary/10 rounded-lg">
@@ -188,7 +243,6 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
 
         <div className="p-6 space-y-4">
           {isGenerating ? (
-            /* 생성 중 진행바 */
             <div className="py-6 text-center space-y-4">
               <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
               <p className="text-sm font-medium text-foreground">지식 그래프 생성 중...</p>
@@ -200,7 +254,6 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
               </div>
             </div>
           ) : !showChat ? (
-            /* 입력 폼 */
             <>
               <div>
                 <label className="text-xs font-medium text-foreground block mb-1.5">도메인 / 과목명</label>
@@ -235,7 +288,6 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
               </button>
             </>
           ) : (
-            /* Context Q&A 채팅 */
             <>
               <div className="flex items-center justify-between">
                 <div>
@@ -333,7 +385,6 @@ export default function HomePage() {
   const [showTrash, setShowTrash] = useState(false)
 
   const refresh = useCallback(() => {
-    // 튜토리얼 그래프가 항상 맨 앞
     const all = getAllGraphs().sort((a, b) => {
       if (a.isTutorial && !b.isTutorial) return -1
       if (!a.isTutorial && b.isTutorial) return 1
@@ -379,22 +430,54 @@ export default function HomePage() {
     setTimeout(() => router.push("/"), 300)
   }
 
+  const totalConcepts = graphs.reduce((s, g) => s + g.nodes.length, 0)
+  const totalAnalyses = graphs.reduce((s, g) => s + g.analysisCount, 0)
+  const continueGraph = recentlyViewed[0] ?? graphs[0] ?? null
+
   return (
-    <div className={cn(
-      "min-h-screen bg-background transition-opacity duration-300",
-      fading ? "opacity-0" : "opacity-100"
-    )}>
-      {/* Top nav */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+    <div
+      className={cn(
+        "min-h-screen bg-background text-foreground relative transition-opacity duration-300",
+        fading ? "opacity-0" : "opacity-100"
+      )}
+    >
+      {/* ── Subtle ambient background ── */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/[0.05] rounded-full blur-[140px]" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-blue-500/[0.04] rounded-full blur-[140px]" />
+      </div>
+
+      {/* ── Top nav ── */}
+      <header className="relative z-10 border-b border-border/70 bg-background/80 backdrop-blur-xl sticky top-0">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-primary rounded-lg shadow-md shadow-primary/20">
-              <BrainCircuit className="h-5 w-5 text-primary-foreground" />
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 bg-primary rounded-lg shadow-md shadow-primary/20">
+                <BrainCircuit className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span className="text-lg font-bold tracking-tight">Linker</span>
             </div>
-            <span className="text-lg font-bold text-foreground tracking-tight">Linker</span>
+
+            <div className="hidden md:flex items-center gap-5 text-xs text-muted-foreground pl-6 border-l border-border">
+              <div className="flex items-center gap-1.5">
+                <BookOpen className="h-3 w-3" />
+                <span><strong className="text-foreground font-semibold">{graphs.length}</strong> 그래프</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <BarChart2 className="h-3 w-3" />
+                <span><strong className="text-foreground font-semibold">{totalConcepts}</strong> 개념</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3" />
+                <span><strong className="text-foreground font-semibold">{totalAnalyses}</strong> 분석</span>
+              </div>
+            </div>
           </div>
+
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-semibold text-primary">U</div>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-sm font-bold text-primary-foreground shadow-md shadow-primary/20">
+              U
+            </div>
             <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <LogOut className="h-3.5 w-3.5" />
               로그아웃
@@ -403,134 +486,215 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-10 space-y-10">
-        {/* Page title */}
+      <main className="relative z-10 max-w-6xl mx-auto px-6 py-12 space-y-12">
+        {/* ── Hero greeting ── */}
         <div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">내 지식 그래프</h1>
-          <p className="text-muted-foreground mt-1.5 text-sm">그래프를 선택해 학습을 시작하거나 새로 생성하세요</p>
+          <p className="text-[11px] font-semibold text-primary uppercase tracking-[0.2em] mb-3">WORKSPACE</p>
+          <h1 className="text-5xl font-black text-foreground tracking-tight leading-tight">
+            다시 오셨네요
+          </h1>
+          <p className="text-muted-foreground mt-3 text-base">
+            {continueGraph
+              ? "최근 학습을 이어가거나 새로운 그래프를 탐색해보세요."
+              : "학습을 시작할 그래프를 선택하거나 새로 만들어보세요."}
+          </p>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "총 그래프", value: graphs.length, icon: BookOpen },
-            { label: "총 개념", value: graphs.reduce((s, g) => s + g.nodes.length, 0), icon: BarChart2 },
-            { label: "분석 횟수", value: graphs.reduce((s, g) => s + g.analysisCount, 0), icon: Sparkles },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="bg-card border border-border rounded-2xl px-5 py-4 flex items-center gap-4">
-              <div className="p-2.5 bg-primary/10 rounded-xl">
-                <Icon className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">{value}</p>
-                <p className="text-xs text-muted-foreground">{label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        {/* ── Continue Learning Hero Card ── */}
+        {continueGraph && (() => {
+          const { icon: Icon, theme } = getDomainStyle(continueGraph.domain)
+          const t = THEMES[theme]
+          const m = mastery(continueGraph)
+          return (
+            <div
+              onClick={() => handleOpenGraph(continueGraph)}
+              className="group relative overflow-hidden rounded-3xl border border-border bg-card shadow-md hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-500 cursor-pointer"
+            >
+              <div className="flex flex-col md:flex-row">
+                {/* Left: decorative (gradient + ring + frosted center) */}
+                <div className={cn(
+                  "relative md:w-[38%] min-h-[280px] flex items-center justify-center p-8 bg-gradient-to-br",
+                  t.heroGradient
+                )}>
+                  {/* Mastery ring with frosted center token */}
+                  <div className="relative">
+                    <MasteryRing
+                      percentage={m}
+                      className={cn("w-44 h-44", t.ring)}
+                      strokeWidth={5}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      {/* Frosted inner circle — 입체감 */}
+                      <div className="w-32 h-32 rounded-full bg-white/70 dark:bg-white/10 backdrop-blur-md border border-white/50 shadow-lg shadow-black/5 flex flex-col items-center justify-center">
+                        <Icon className={cn("h-6 w-6 mb-0.5", t.icon)} strokeWidth={2} />
+                        <p className="text-3xl font-black text-foreground leading-none">
+                          {m}<span className="text-sm font-bold text-muted-foreground ml-0.5">%</span>
+                        </p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5 uppercase tracking-wider">숙련도</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-        {/* Recently Viewed */}
-        {recentlyViewed.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Eye className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-foreground">최근에 열람</h2>
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              {recentlyViewed.map((graph) => (
-                <button
-                  key={graph.id}
-                  onClick={() => handleOpenGraph(graph)}
-                  className="flex items-center gap-2.5 bg-card border border-border rounded-xl px-3.5 py-2.5 hover:border-primary/40 hover:bg-primary/5 transition-all group"
-                >
-                  <div className={cn("w-7 h-7 rounded-lg bg-gradient-to-br flex items-center justify-center shrink-0", graphColor(graph.domain).split(" ")[0])}>
-                    <BookOpen className="h-3.5 w-3.5 text-foreground/60" />
+                {/* Right: info */}
+                <div className="flex-1 p-8 flex flex-col justify-between min-h-[280px]">
+                  <div>
+                    <p className="text-[11px] font-semibold text-primary uppercase tracking-[0.15em] mb-3 flex items-center gap-2">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                      이어서 학습
+                    </p>
+                    <h2 className="text-3xl md:text-4xl font-bold text-foreground leading-tight">
+                      {continueGraph.domain}
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {continueGraph.nodes.length}개 개념 · 마지막 학습 {timeAgo(continueGraph.lastViewedAt ?? continueGraph.updatedAt)}
+                    </p>
                   </div>
-                  <div className="text-left">
-                    <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors leading-tight">{graph.domain}</p>
-                    <p className="text-[10px] text-muted-foreground">{timeAgo(graph.lastViewedAt ?? graph.updatedAt)}</p>
+
+                  {/* Mastery bar */}
+                  <div className="space-y-1.5 my-6">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>학습 진도</span>
+                      <span className="text-foreground font-bold">{m}%</span>
+                    </div>
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all duration-700", t.bar)}
+                        style={{ width: `${m}%` }}
+                      />
+                    </div>
                   </div>
-                </button>
-              ))}
+
+                  <div className="inline-flex items-center gap-2 text-sm text-primary font-semibold group-hover:gap-3 transition-all self-start">
+                    <span>학습 이어가기</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
             </div>
+          )
+        })()}
+
+        {/* ── All Graphs Grid ── */}
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold text-foreground">모든 그래프</h2>
+              <span className="text-xs text-muted-foreground bg-muted border border-border px-2 py-0.5 rounded-full font-mono">
+                {graphs.length}
+              </span>
+            </div>
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              새 그래프
+            </button>
           </div>
-        )}
 
-        {/* Graph Grid */}
-        <div>
-          <h2 className="text-sm font-semibold text-foreground mb-4">모든 그래프</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* New graph card */}
             <button
               onClick={() => setShowGenerateModal(true)}
-              className="group h-52 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-card hover:bg-primary/5 transition-all duration-200 flex flex-col items-center justify-center gap-3 text-muted-foreground hover:text-primary"
+              className="group min-h-[320px] rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-card hover:bg-primary/[0.04] transition-all duration-300 flex flex-col items-center justify-center gap-4 text-muted-foreground hover:text-primary"
             >
-              <div className="w-12 h-12 rounded-full border-2 border-current flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Plus className="h-5 w-5" />
+              <div className="w-14 h-14 rounded-full border-2 border-current flex items-center justify-center group-hover:scale-110 group-hover:rotate-90 transition-all duration-300">
+                <Plus className="h-6 w-6" />
               </div>
-              <div className="text-center">
-                <p className="font-medium text-sm">새 그래프 생성</p>
-                <p className="text-xs opacity-70 mt-0.5">강의 텍스트로 지식 그래프를 생성합니다</p>
+              <div className="text-center px-6">
+                <p className="font-semibold text-base">새 그래프 생성</p>
+                <p className="text-xs opacity-70 mt-1.5">강의 텍스트로 지식 그래프를 만드세요</p>
               </div>
             </button>
 
+            {/* Graph cards */}
             {graphs.map((graph) => {
               const m = mastery(graph)
-              const color = graphColor(graph.domain)
+              const { icon: Icon, theme } = getDomainStyle(graph.domain)
+              const t = THEMES[theme]
               return (
                 <div
                   key={graph.id}
                   onClick={() => handleOpenGraph(graph)}
                   className={cn(
-                    "group relative h-52 rounded-2xl border bg-gradient-to-br cursor-pointer",
-                    "hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200",
-                    graph.isTutorial && "ring-2 ring-primary/30",
-                    color
+                    "group relative rounded-2xl border bg-card overflow-hidden cursor-pointer",
+                    "hover:shadow-xl hover:-translate-y-1 transition-all duration-300",
+                    graph.isTutorial
+                      ? "border-primary/30 shadow-[0_0_30px_rgba(168,85,247,0.08)]"
+                      : "border-border"
                   )}
                 >
-                  {/* 삭제 버튼 — 튜토리얼은 숨김 */}
-                  {!graph.isTutorial && (
-                    <button
-                      onClick={(e) => handleDelete(graph.id, e)}
-                      className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-background/60 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground text-muted-foreground"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {/* 튜토리얼 보호 뱃지 */}
-                  {graph.isTutorial && (
-                    <div className="absolute top-3 right-3 bg-primary text-primary-foreground text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                      <GraduationCap className="h-2.5 w-2.5" />
-                      TUTORIAL
-                    </div>
-                  )}
+                  {/* Top: gradient + large icon */}
+                  <div className={cn(
+                    "relative h-44 flex items-center justify-center bg-gradient-to-br overflow-hidden",
+                    t.gradient
+                  )}>
+                    {/* Decorative blur accent */}
+                    <div className={cn(
+                      "absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl opacity-40",
+                      t.bar
+                    )} />
 
-                  <div className="p-5 h-full flex flex-col">
-                    <div className="flex-1">
-                      <div className="inline-flex items-center gap-1.5 bg-background/50 backdrop-blur-sm rounded-full px-2.5 py-1 text-[10px] font-medium text-foreground mb-3">
-                        <BookOpen className="h-3 w-3" />
-                        {graph.nodes.length}개 개념
+                    {/* Frosted circle backdrop + Big centered icon */}
+                    <div className="relative flex items-center justify-center">
+                      <div className="absolute w-24 h-24 rounded-full bg-white/70 dark:bg-white/10 backdrop-blur-md border border-white/50 shadow-lg shadow-black/5" />
+                      <Icon
+                        className={cn("relative h-14 w-14", t.icon)}
+                        strokeWidth={1.75}
+                      />
+                    </div>
+
+                    {/* Tutorial badge / Delete button */}
+                    {graph.isTutorial ? (
+                      <div className="absolute top-3 right-3 bg-primary text-primary-foreground text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md shadow-primary/30">
+                        <GraduationCap className="h-2.5 w-2.5" />
+                        TUTORIAL
                       </div>
-                      <h3 className="font-bold text-base text-foreground leading-tight">{graph.domain}</h3>
-                    </div>
+                    ) : (
+                      <button
+                        onClick={(e) => handleDelete(graph.id, e)}
+                        className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-card/70 backdrop-blur border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground text-muted-foreground"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
 
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs text-muted-foreground">
+                    {/* Concept count badge */}
+                    <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 bg-card/70 backdrop-blur-md border border-border rounded-full px-2.5 py-1 text-[10px] text-foreground font-medium">
+                      <BookOpen className="h-2.5 w-2.5" />
+                      {graph.nodes.length}개 개념
+                    </div>
+                  </div>
+
+                  {/* Bottom: info */}
+                  <div className="p-5 space-y-3">
+                    <h3 className="font-bold text-lg text-foreground leading-tight group-hover:text-primary transition-colors">
+                      {graph.domain}
+                    </h3>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
                         <span>숙련도</span>
-                        <span className="font-medium text-foreground">{m}%</span>
+                        <span className="text-foreground font-semibold">{m}%</span>
                       </div>
-                      <div className="h-1.5 bg-background/60 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${m}%` }} />
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full transition-all duration-500", t.bar)}
+                          style={{ width: `${m}%` }}
+                        />
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between mt-3">
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Clock className="h-3 w-3" />{timeAgo(graph.updatedAt)}
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-primary font-medium group-hover:gap-2 transition-all">
-                        학습 시작 <ChevronRight className="h-3 w-3" />
-                      </span>
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {timeAgo(graph.updatedAt)}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-primary font-medium group-hover:gap-2 transition-all">
+                        <span>학습 시작</span>
+                        <ChevronRight className="h-3 w-3" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -539,46 +703,51 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Trash section */}
-        <div>
+        {/* ── Trash section (compact) ── */}
+        <div className="pt-4">
           <button
             onClick={() => setShowTrash((v) => !v)}
-            className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors mb-3 group"
+            className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
           >
-            <Trash2 className="h-4 w-4" />
-            휴지통
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>휴지통</span>
             {trash.length > 0 && (
-              <span className="bg-muted text-muted-foreground text-[10px] px-1.5 py-0.5 rounded-full font-medium">{trash.length}</span>
+              <span className="bg-muted border border-border text-muted-foreground text-[10px] px-1.5 py-0.5 rounded-full font-mono">
+                {trash.length}
+              </span>
             )}
-            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showTrash && "rotate-90")} />
+            <ChevronRight className={cn("h-3 w-3 transition-transform", showTrash && "rotate-90")} />
           </button>
 
           {showTrash && (
-            <div className="space-y-3">
-              {/* Warning */}
-              <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-xl px-4 py-3">
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                  휴지통은 최대 <strong>3개</strong>까지 보관됩니다. 3개를 초과하거나 삭제 후 <strong>7일</strong>이 지나면 자동으로 삭제됩니다.
+            <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-lg px-3 py-2">
+                <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-amber-700 dark:text-amber-300/80 leading-relaxed">
+                  최대 <strong>3개</strong>까지 보관 · 3개 초과 또는 <strong>7일</strong> 경과 시 자동 삭제
                 </p>
               </div>
 
               {trash.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">휴지통이 비어있습니다.</p>
+                <p className="text-[10px] text-muted-foreground py-1">휴지통이 비어있습니다.</p>
               ) : (
                 <>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {trash.map((item) => (
-                      <div key={item.graph.id} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3">
+                      <div
+                        key={item.graph.id}
+                        className="flex items-center gap-3 bg-card border border-border rounded-lg px-3 py-2"
+                      >
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{item.graph.domain}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            삭제됨 {timeAgo(item.deletedAt)} · <span className="text-amber-500">{trashDaysLeft(item.deletedAt)}일 후 자동 삭제</span>
+                          <p className="text-xs font-medium text-foreground truncate">{item.graph.domain}</p>
+                          <p className="text-[9px] text-muted-foreground">
+                            삭제됨 {timeAgo(item.deletedAt)} ·
+                            <span className="text-amber-600 dark:text-amber-400"> {trashDaysLeft(item.deletedAt)}일 후 자동 삭제</span>
                           </p>
                         </div>
                         <button
                           onClick={() => handleRestore(item.graph.id)}
-                          className="text-xs text-primary hover:underline font-medium shrink-0"
+                          className="text-[10px] text-primary hover:underline font-medium shrink-0"
                         >
                           복원
                         </button>
@@ -587,7 +756,7 @@ export default function HomePage() {
                   </div>
                   <button
                     onClick={handleEmptyTrash}
-                    className="text-xs text-destructive hover:underline font-medium"
+                    className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
                   >
                     휴지통 비우기
                   </button>

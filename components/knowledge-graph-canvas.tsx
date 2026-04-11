@@ -21,7 +21,7 @@ import ReactFlow, {
   BaseEdge,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2, Info } from "lucide-react"
+import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2, Info, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -33,12 +33,14 @@ interface GraphEditContextValue {
   editMode: boolean
   onDeleteNode: (id: string, label: string) => void
   onDeleteEdge: (id: string) => void
+  onRenameNode: (id: string, currentLabel: string) => void
 }
 
 const GraphEditContext = createContext<GraphEditContextValue>({
   editMode: false,
   onDeleteNode: () => { },
   onDeleteEdge: () => { },
+  onRenameNode: () => { },
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -178,22 +180,36 @@ function buildEdgeStyle(
 // ─────────────────────────────────────────────────────────────
 
 function ConceptNode({ data, selected, id }: NodeProps) {
-  const { editMode, onDeleteNode } = useContext(GraphEditContext)
+  const { editMode, onDeleteNode, onRenameNode } = useContext(GraphEditContext)
   const { label, nodeType, isAnalyzing, isFiltered, confidence } = data
   const showAiBadge = confidence !== undefined && confidence < 0.8 && nodeType !== "mastered"
 
   return (
       <div className="relative group">
         {editMode && (
-            <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDeleteNode(id, label)
-                }}
-                className="absolute -top-2 -right-2 w-5 h-5 bg-destructive hover:bg-destructive/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md"
-            >
-              <X className="h-3 w-3" />
-            </button>
+            <>
+              {/* Delete button — 우상단 */}
+              <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteNode(id, label)
+                  }}
+                  className="absolute -top-2 -right-2 w-5 h-5 bg-destructive hover:bg-destructive/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md"
+              >
+                <X className="h-3 w-3" />
+              </button>
+              {/* Rename button — 좌상단 */}
+              <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onRenameNode(id, label)
+                  }}
+                  className="absolute -top-2 -left-2 w-5 h-5 bg-primary hover:bg-primary/80 text-primary-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md"
+                  title="이름 변경"
+              >
+                <Pencil className="h-2.5 w-2.5" />
+              </button>
+            </>
         )}
 
         {showAiBadge && (
@@ -347,6 +363,9 @@ export function KnowledgeGraphCanvas({
   const aiToastTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const errorTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const traversalTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  // Rename 관련
+  const [renameTarget, setRenameTarget] = useState<{ id: string; currentLabel: string } | null>(null)
+  const [renameInput, setRenameInput] = useState("")
 
   // 취소용 스냅샷 — ref로 보관해 불필요한 리렌더 방지
   const snapshotRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null)
@@ -376,10 +395,16 @@ export function KnowledgeGraphCanvas({
       [skipDeleteConfirm]
   )
 
+  // Rename 모달 오픈 — ConceptNode의 pencil 버튼과 canvas 레벨 addNewNode가 공유
+  const handleOpenRename = useCallback((id: string, currentLabel: string) => {
+    setRenameTarget({ id, currentLabel })
+    setRenameInput(currentLabel)
+  }, [])
+
   // Context value 메모이제이션 — 값이 바뀔 때만 하위 리렌더
   const contextValue = useMemo<GraphEditContextValue>(
-      () => ({ editMode, onDeleteNode: handleDeleteNode, onDeleteEdge: handleDeleteEdge }),
-      [editMode, handleDeleteNode, handleDeleteEdge]
+      () => ({ editMode, onDeleteNode: handleDeleteNode, onDeleteEdge: handleDeleteEdge, onRenameNode: handleOpenRename }),
+      [editMode, handleDeleteNode, handleDeleteEdge, handleOpenRename]
   )
 
   // ── 노드/엣지 빌더 ───────────────────────────────────────
@@ -565,7 +590,11 @@ export function KnowledgeGraphCanvas({
 
   const handleNodeClick = useCallback(
       (_: React.MouseEvent, node: Node) => {
-        if (editMode) return
+        if (editMode) {
+          // 수정 모드: 클릭 시 rename 모달 오픈
+          handleOpenRename(node.id, (node.data.label as string) ?? "")
+          return
+        }
         const kNode = knowledgeNodes.find((n) => n.id === node.id)
         if (!kNode) return
         onNodeClick({
@@ -575,7 +604,7 @@ export function KnowledgeGraphCanvas({
           description: kNode.description,
         })
       },
-      [onNodeClick, activeRootCauseId, masteredNodeIds, editMode, knowledgeNodes]
+      [onNodeClick, activeRootCauseId, masteredNodeIds, editMode, knowledgeNodes, handleOpenRename]
   )
 
   // ── 수정 모드 진입/저장/취소 ─────────────────────────────
@@ -683,6 +712,7 @@ export function KnowledgeGraphCanvas({
   const addNewNode = useCallback(() => {
     const maxId = Math.max(...nodes.map((n) => parseInt(n.id) || 0), 0)
     const newId = String(maxId + 1)
+    const defaultLabel = `새 개념 ${newId}`
     setNodes((nds) => [
       ...nds,
       {
@@ -690,7 +720,7 @@ export function KnowledgeGraphCanvas({
         type: "concept",
         position: { x: 400, y: 520 },
         data: {
-          label: `새 개념 ${newId}`,
+          label: defaultLabel,
           nodeType: "standard",
           description: "새로운 개념",
           isFiltered: false,
@@ -699,7 +729,9 @@ export function KnowledgeGraphCanvas({
         draggable: true,
       },
     ])
-  }, [nodes, setNodes])
+    // 생성 즉시 이름 변경 모달 오픈 — 바로 유저가 이름 지정 가능
+    setTimeout(() => handleOpenRename(newId, defaultLabel), 60)
+  }, [nodes, setNodes, editMode, handleOpenRename])
 
   // ── 삭제 확정/취소 ────────────────────────────────────────
 
@@ -801,6 +833,27 @@ export function KnowledgeGraphCanvas({
     aiOrganizeSnapshotRef.current = null
     setShowAiOrganizeConfirm(false)
   }, [setNodes])
+
+  // ── Rename confirm / cancel ──────────────────────────────
+
+  const confirmRename = useCallback(() => {
+    if (!renameTarget || !renameInput.trim()) return
+    const newLabel = renameInput.trim()
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === renameTarget.id
+          ? { ...n, data: { ...n.data, label: newLabel } }
+          : n
+      )
+    )
+    setRenameTarget(null)
+    setRenameInput("")
+  }, [renameTarget, renameInput, setNodes])
+
+  const cancelRename = useCallback(() => {
+    setRenameTarget(null)
+    setRenameInput("")
+  }, [])
 
   // ─────────────────────────────────────────────────────────
   // Render
@@ -1098,6 +1151,51 @@ export function KnowledgeGraphCanvas({
                     </Button>
                     <Button variant="destructive" size="sm" onClick={executeDelete}>
                       삭제
+                    </Button>
+                  </div>
+                </div>
+              </div>
+          )}
+
+          {/* ── Rename Modal ── */}
+          {renameTarget && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95 fade-in duration-200">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-primary/10 rounded-full">
+                      <Pencil className="h-5 w-5 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground">노드 이름 변경</h3>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground mb-3">
+                    현재: <strong className="text-foreground">{renameTarget.currentLabel}</strong>
+                  </p>
+
+                  <input
+                      type="text"
+                      value={renameInput}
+                      onChange={(e) => setRenameInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") confirmRename()
+                        if (e.key === "Escape") cancelRename()
+                      }}
+                      autoFocus
+                      placeholder="새 이름을 입력하세요..."
+                      className="w-full px-4 py-2.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary mb-5 placeholder:text-muted-foreground/50"
+                  />
+
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" size="sm" onClick={cancelRename}>
+                      취소
+                    </Button>
+                    <Button
+                        size="sm"
+                        onClick={confirmRename}
+                        disabled={!renameInput.trim() || renameInput.trim() === renameTarget.currentLabel}
+                    >
+                      <Pencil className="h-3 w-3 mr-1" />
+                      변경
                     </Button>
                   </div>
                 </div>
