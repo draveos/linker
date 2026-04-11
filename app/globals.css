@@ -135,3 +135,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Landing page floating particles */
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate(10px, -20px);
+    opacity: 0.6;
+  }
+}

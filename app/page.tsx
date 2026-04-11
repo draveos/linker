@@ -1,8 +1,12 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import { BrainCircuit, ArrowRight, Play, Grid3x3, Brain, BookOpen, Sparkles, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react"
+import {
+  BrainCircuit, ArrowRight, Play, Grid3x3, Brain, BookOpen, Sparkles,
+  ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Check, Bot, Shield, Zap,
+  TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Network,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // ── Reveal on scroll hook ──
@@ -108,19 +112,42 @@ const capabilities = [
 ]
 
 // ── Subjects for 3D carousel ──
-const subjects = [
-  { label: "선형대수학", desc: "벡터, 행렬, 고유값" },
-  { label: "미적분학", desc: "미분, 적분, 극한" },
-  { label: "알고리즘", desc: "정렬, 탐색, 그래프" },
-  { label: "확률통계", desc: "확률분포, 추론, 회귀" },
-  { label: "물리학", desc: "역학, 전자기학, 열역학" },
-  { label: "화학", desc: "유기화학, 무기화학" },
-  { label: "생물학", desc: "세포, 유전, 생태학" },
-  { label: "컴퓨터 구조", desc: "CPU, 메모리, 캐시" },
-  { label: "운영체제", desc: "프로세스, 스레드, 메모리" },
-  { label: "데이터베이스", desc: "SQL, 정규화, 트랜잭션" },
-  { label: "네트워크", desc: "TCP/IP, HTTP, 소켓" },
-  { label: "머신러닝", desc: "회귀, 분류, 클러스터링" },
+// Tailwind 동적 클래스 방지를 위해 lookup 테이블로 분리
+const SUBJECT_COLORS = {
+  blue:    { iconColor: "text-blue-400",    cardBorder: "border-blue-500/30",    watermark: "text-blue-500/[0.06]",    linkColor: "text-blue-400" },
+  purple:  { iconColor: "text-purple-400",  cardBorder: "border-purple-500/30",  watermark: "text-purple-500/[0.06]",  linkColor: "text-purple-400" },
+  orange:  { iconColor: "text-orange-400",  cardBorder: "border-orange-500/30",  watermark: "text-orange-500/[0.06]",  linkColor: "text-orange-400" },
+  pink:    { iconColor: "text-pink-400",    cardBorder: "border-pink-500/30",    watermark: "text-pink-500/[0.06]",    linkColor: "text-pink-400" },
+  cyan:    { iconColor: "text-cyan-400",    cardBorder: "border-cyan-500/30",    watermark: "text-cyan-500/[0.06]",    linkColor: "text-cyan-400" },
+  emerald: { iconColor: "text-emerald-400", cardBorder: "border-emerald-500/30", watermark: "text-emerald-500/[0.06]", linkColor: "text-emerald-400" },
+  lime:    { iconColor: "text-lime-400",    cardBorder: "border-lime-500/30",    watermark: "text-lime-500/[0.06]",    linkColor: "text-lime-400" },
+  red:     { iconColor: "text-red-400",     cardBorder: "border-red-500/30",     watermark: "text-red-500/[0.06]",     linkColor: "text-red-400" },
+  slate:   { iconColor: "text-slate-300",   cardBorder: "border-slate-400/30",   watermark: "text-slate-400/[0.06]",   linkColor: "text-slate-300" },
+  amber:   { iconColor: "text-amber-400",   cardBorder: "border-amber-500/30",   watermark: "text-amber-500/[0.06]",   linkColor: "text-amber-400" },
+  teal:    { iconColor: "text-teal-400",    cardBorder: "border-teal-500/30",    watermark: "text-teal-500/[0.06]",    linkColor: "text-teal-400" },
+  fuchsia: { iconColor: "text-fuchsia-400", cardBorder: "border-fuchsia-500/30", watermark: "text-fuchsia-500/[0.06]", linkColor: "text-fuchsia-400" },
+} as const
+
+type SubjectColor = keyof typeof SUBJECT_COLORS
+
+const subjects: Array<{
+  label: string
+  desc: string
+  icon: typeof Grid3x3
+  color: SubjectColor
+}> = [
+  { label: "선형대수학",   desc: "벡터, 행렬, 고유값",       icon: Grid3x3,      color: "blue" },
+  { label: "미적분학",     desc: "미분, 적분, 극한",         icon: TrendingUp,   color: "purple" },
+  { label: "알고리즘",     desc: "정렬, 탐색, 그래프",       icon: GitBranch,    color: "orange" },
+  { label: "확률통계",     desc: "확률분포, 추론, 회귀",     icon: BarChart3,    color: "pink" },
+  { label: "물리학",       desc: "역학, 전자기학, 열역학",   icon: Atom,         color: "cyan" },
+  { label: "화학",         desc: "유기화학, 무기화학",       icon: FlaskConical, color: "emerald" },
+  { label: "생물학",       desc: "세포, 유전, 생태학",       icon: Dna,          color: "lime" },
+  { label: "컴퓨터 구조",  desc: "CPU, 메모리, 캐시",        icon: Cpu,          color: "red" },
+  { label: "운영체제",     desc: "프로세스, 스레드, 메모리", icon: Terminal,     color: "slate" },
+  { label: "데이터베이스", desc: "SQL, 정규화, 트랜잭션",    icon: Database,     color: "amber" },
+  { label: "네트워크",     desc: "TCP/IP, HTTP, 소켓",       icon: Network,      color: "teal" },
+  { label: "머신러닝",     desc: "회귀, 분류, 클러스터링",   icon: Brain,        color: "fuchsia" },
 ]
 
 // ── Demo areas ──
@@ -129,6 +156,501 @@ const demoAreas = [
   { title: "오답 분석 상세 보고서", badge: "AI-Powered" },
   { title: "개인화 학습 경로", badge: "Adaptive" },
 ]
+
+// ── Harness agent configs ──
+const HARNESS_AGENTS = [
+  {
+    id: "proposer" as const,
+    name: "Proposer",
+    icon: Bot,
+    runningBorder: "border-primary/50",
+    runningBg: "bg-primary/10",
+    iconColor: "text-primary",
+    spinnerClass: "border-primary/30 border-t-primary",
+    glowClass: "shadow-[0_0_14px_rgba(168,85,247,0.3)]",
+    idleText: "추론 대기",
+    runningText: "그래프 역추적 중",
+    doneText: "행렬식 · 89%",
+  },
+  {
+    id: "verifier" as const,
+    name: "Verifier",
+    icon: Shield,
+    runningBorder: "border-amber-500/50",
+    runningBg: "bg-amber-500/10",
+    iconColor: "text-amber-400",
+    spinnerClass: "border-amber-500/30 border-t-amber-400",
+    glowClass: "shadow-[0_0_14px_rgba(251,191,36,0.3)]",
+    idleText: "검증 대기",
+    runningText: "선행 개념 교차 검증",
+    doneText: "✓ 동의 · 확정",
+  },
+  {
+    id: "content" as const,
+    name: "Content Gen",
+    icon: BookOpen,
+    runningBorder: "border-cyan-500/50",
+    runningBg: "bg-cyan-500/10",
+    iconColor: "text-cyan-400",
+    spinnerClass: "border-cyan-500/30 border-t-cyan-400",
+    glowClass: "shadow-[0_0_14px_rgba(34,211,238,0.3)]",
+    idleText: "생성 대기",
+    runningText: "마이크로 러닝 작성",
+    doneText: "3분 학습 준비됨",
+  },
+]
+
+type HarnessAgent = typeof HARNESS_AGENTS[number]
+type AgentStatus = "idle" | "running" | "done"
+
+const PHASE_TOKENS = [0, 142, 298, 441]
+const PHASE_LATENCY = [0, 0.8, 1.6, 2.4]   // seconds, fake
+
+function getAgentStatus(id: HarnessAgent["id"], phase: number): AgentStatus {
+  if (phase === 0) return "idle"
+  if (id === "proposer") return phase === 1 ? "running" : "done"
+  if (id === "verifier") {
+    if (phase < 2) return "idle"
+    if (phase === 2) return "running"
+    return "done"
+  }
+  // content
+  if (phase < 3) return "idle"
+  return "running"
+}
+
+// ── Linker App Mockup — 4-phase animated demo ──
+function LinkerDemoMockup() {
+  const [phase, setPhase] = useState(0)
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPhase((p) => (p + 1) % 4)
+    }, 2800)
+    return () => clearInterval(interval)
+  }, [])
+
+  // phase 0: idle, 1: analyzing, 2: root cause found, 3: verifier shown
+  const nodes = [
+    { id: "1", label: "벡터",        x: 20, y: 15 },
+    { id: "2", label: "행렬",        x: 50, y: 15 },
+    { id: "3", label: "행렬 곱셈",   x: 80, y: 15 },
+    { id: "4", label: "행렬식",      x: 35, y: 45 },
+    { id: "5", label: "선형 변환",   x: 65, y: 45 },
+    { id: "6", label: "역행렬",      x: 20, y: 75 },
+    { id: "7", label: "고유값",      x: 50, y: 75 },
+    { id: "8", label: "대각화",      x: 80, y: 75 },
+  ]
+
+  const edges: [string, string][] = [
+    ["1", "2"], ["2", "3"], ["2", "4"], ["3", "5"],
+    ["4", "6"], ["4", "7"], ["5", "7"], ["7", "8"],
+  ]
+
+  const rootCauseId = "4"
+  const traversalPath = new Set(["2-4", "4-7", "4-6"])
+  const showResult = phase >= 2
+  const showVerifier = phase >= 3
+
+  return (
+    <div className="relative">
+      {/* Outer glow */}
+      <div className="absolute -inset-8 bg-gradient-to-r from-primary/20 via-blue-500/20 to-purple-500/20 blur-3xl opacity-60 pointer-events-none" />
+
+      {/* Browser window */}
+      <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-[0_20px_80px_-15px_rgba(0,0,0,0.8)] bg-gradient-to-br from-gray-950 to-black">
+        {/* Window chrome */}
+        <div className="flex items-center gap-3 px-4 py-3 bg-black/80 backdrop-blur border-b border-white/5">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-red-500/80" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+            <div className="w-3 h-3 rounded-full bg-green-500/80" />
+          </div>
+          <div className="flex-1 max-w-xs mx-auto bg-white/5 rounded-md px-3 py-1 text-[10px] text-white/40 text-center font-mono">
+            🔒 linker.app/learn
+          </div>
+          <div className="w-12" />
+        </div>
+
+        {/* App content */}
+        <div className="flex h-[500px] sm:h-[580px] bg-gradient-to-br from-gray-950 via-black to-gray-950">
+          {/* ── Sidebar ── */}
+          <div className="w-48 sm:w-56 border-r border-white/5 p-4 space-y-3 shrink-0">
+            {/* Logo */}
+            <div className="flex items-center gap-2 pb-3 border-b border-white/5">
+              <div className="p-1.5 bg-primary/20 rounded-lg border border-primary/30">
+                <BrainCircuit className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <span className="text-white text-xs font-bold tracking-tight">Linker</span>
+            </div>
+
+            {/* 오답 입력 */}
+            <div className="space-y-2">
+              <div className="text-white/30 text-[9px] font-semibold uppercase tracking-wider">오답 입력</div>
+              <div className="bg-white/5 rounded-lg p-2.5 space-y-1.5 border border-white/5">
+                <div className="h-1 bg-white/15 rounded-full" />
+                <div className="h-1 bg-white/15 rounded-full w-5/6" />
+                <div className="h-1 bg-white/10 rounded-full w-2/3" />
+                <div className="h-1 bg-white/10 rounded-full w-3/4" />
+              </div>
+
+              {/* Analyze button */}
+              <button
+                className={cn(
+                  "w-full py-2 rounded-lg text-[10px] font-semibold flex items-center justify-center gap-1.5 transition-all",
+                  phase === 1
+                    ? "bg-primary/30 text-primary border border-primary/30"
+                    : "bg-primary text-primary-foreground shadow-md shadow-primary/30"
+                )}
+              >
+                {phase === 1 ? (
+                  <>
+                    <div className="w-2.5 h-2.5 border border-primary/40 border-t-primary rounded-full animate-spin" />
+                    분석 중...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-2.5 w-2.5" />
+                    결손 개념 분석
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Recent analyses */}
+            <div className="pt-2 space-y-1.5">
+              <div className="text-white/30 text-[9px] font-semibold uppercase tracking-wider">최근 분석</div>
+              <div
+                className={cn(
+                  "bg-white/5 rounded-lg p-2 border border-white/5 transition-all duration-500",
+                  showResult && "border-red-500/30 bg-red-500/5"
+                )}
+              >
+                <div className="text-white/70 text-[9px] font-medium truncate">
+                  {showResult ? "행렬식 결손 탐지" : "역행렬 부호 오류"}
+                </div>
+                <div className="text-white/30 text-[8px]">
+                  {showResult ? "방금 전" : "10분 전"}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Multi-Agent Harness Panel ── */}
+            <div className="pt-2">
+              {/* Header */}
+              <div className="flex items-center gap-1 mb-1.5">
+                <div className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-all duration-500",
+                  phase === 0 && "bg-white/30",
+                  phase > 0 && phase < 3 && "bg-primary animate-pulse",
+                  phase === 3 && "bg-emerald-400"
+                )} />
+                <span className="text-white/40 text-[9px] font-semibold uppercase tracking-wider flex-1">
+                  Multi-Agent Harness
+                </span>
+              </div>
+
+              {/* Container */}
+              <div className="rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-2 space-y-1.5 backdrop-blur-sm">
+                {/* Stats row */}
+                <div className="flex items-center justify-between pb-1.5 border-b border-white/5">
+                  <span className="text-[8px] text-white/40 font-mono flex items-center gap-1">
+                    <Zap className="h-2 w-2" />
+                    3 agents
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8px] text-white/50 font-mono tabular-nums transition-all duration-500">
+                      {PHASE_TOKENS[phase]}t
+                    </span>
+                    <span className="text-[8px] text-white/30 font-mono tabular-nums transition-all duration-500">
+                      {PHASE_LATENCY[phase].toFixed(1)}s
+                    </span>
+                  </div>
+                </div>
+
+                {/* Agent cards */}
+                {HARNESS_AGENTS.map((cfg, idx) => {
+                  const status = getAgentStatus(cfg.id, phase)
+                  const isRunning = status === "running"
+                  const isDone = status === "done"
+                  const Icon = cfg.icon
+                  const subText =
+                    status === "idle" ? cfg.idleText :
+                    status === "running" ? cfg.runningText :
+                    cfg.doneText
+
+                  return (
+                    <div key={cfg.id} className="relative">
+                      {/* Connecting line between agents (except first) */}
+                      {idx > 0 && (
+                        <div className={cn(
+                          "absolute -top-[7px] left-[9px] w-px h-1.5 transition-colors duration-500",
+                          (phase > idx) ? "bg-emerald-500/40" : "bg-white/10"
+                        )} />
+                      )}
+
+                      <div
+                        className={cn(
+                          "rounded-lg px-2 py-1.5 border transition-all duration-500",
+                          isRunning && cfg.runningBorder,
+                          isRunning && cfg.runningBg,
+                          isRunning && cfg.glowClass,
+                          isDone && "border-emerald-500/25 bg-emerald-500/5",
+                          !isRunning && !isDone && "border-white/5 bg-white/[0.02]"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Icon className={cn(
+                            "h-2.5 w-2.5 shrink-0 transition-colors duration-500",
+                            isRunning && cfg.iconColor,
+                            isDone && "text-emerald-400",
+                            !isRunning && !isDone && "text-white/25"
+                          )} />
+                          <span className={cn(
+                            "text-[9px] font-semibold transition-colors duration-500 flex-1 truncate",
+                            isRunning && "text-white",
+                            isDone && "text-white/70",
+                            !isRunning && !isDone && "text-white/35"
+                          )}>
+                            {cfg.name}
+                          </span>
+                          {/* Status indicator */}
+                          {isRunning && (
+                            <div className={cn("w-2.5 h-2.5 border rounded-full animate-spin shrink-0", cfg.spinnerClass)} />
+                          )}
+                          {isDone && <Check className="h-2.5 w-2.5 text-emerald-400 shrink-0" />}
+                          {!isRunning && !isDone && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white/15 shrink-0" />
+                          )}
+                        </div>
+                        <div className={cn(
+                          "text-[8px] pl-4 mt-0.5 leading-tight transition-all duration-500 whitespace-nowrap overflow-hidden",
+                          isRunning && "text-white/65",
+                          isDone && "text-white/45",
+                          !isRunning && !isDone && "text-white/25"
+                        )}>
+                          {subText}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Graph area ── */}
+          <div className="flex-1 relative overflow-hidden">
+            {/* Dot grid background */}
+            <div
+              className="absolute inset-0 opacity-20"
+              style={{
+                backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px)",
+                backgroundSize: "18px 18px",
+              }}
+            />
+
+            {/* SVG edges — 불투명 노드 뒤로 */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+              <defs>
+                <marker id="arrow-default" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.25)" />
+                </marker>
+                <marker id="arrow-danger" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                </marker>
+              </defs>
+              {edges.map(([from, to]) => {
+                const n1 = nodes.find((n) => n.id === from)!
+                const n2 = nodes.find((n) => n.id === to)!
+                const edgeId = `${from}-${to}`
+                const isPath = showResult && traversalPath.has(edgeId)
+
+                // 라인 단축 — 노드 경계 안쪽으로 들어가지 않게, 화살표 공간 확보
+                const dx = n2.x - n1.x
+                const dy = n2.y - n1.y
+                const len = Math.sqrt(dx * dx + dy * dy) || 1
+                const ux = dx / len
+                const uy = dy / len
+                const startPad = 5        // 시작 노드에서 떨어뜨리는 정도 (%)
+                const endPad = isPath ? 8 : 7   // 화살표 공간, 빨강은 마커 더 커서 약간 더 짧게
+                const x1 = n1.x + ux * startPad
+                const y1 = n1.y + uy * startPad
+                const x2 = n2.x - ux * endPad
+                const y2 = n2.y - uy * endPad
+
+                return (
+                  <line
+                    key={edgeId}
+                    x1={`${x1}%`} y1={`${y1}%`}
+                    x2={`${x2}%`} y2={`${y2}%`}
+                    stroke={isPath ? "#ef4444" : "rgba(255,255,255,0.15)"}
+                    strokeWidth={isPath ? 2 : 1}
+                    strokeDasharray={isPath ? "4 2" : undefined}
+                    markerEnd={`url(#${isPath ? "arrow-danger" : "arrow-default"})`}
+                    className={cn("transition-all duration-700", isPath && "animate-pulse")}
+                  />
+                )
+              })}
+            </svg>
+
+            {/* Nodes — 얕은 네온: 불투명 dark fill + 네온 border/glow */}
+            {nodes.map((n) => {
+              const isRoot = showResult && n.id === rootCauseId
+              const isMastered = ["1", "2", "3"].includes(n.id)
+              return (
+                <div
+                  key={n.id}
+                  className={cn(
+                    "absolute -translate-x-1/2 -translate-y-1/2 px-2.5 py-1 rounded-md text-[9px] font-semibold border-2 transition-all duration-700 whitespace-nowrap z-[1]",
+                    isRoot && "bg-rose-950 border-rose-500 text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.55)] scale-110 animate-pulse z-10",
+                    !isRoot && isMastered && "bg-slate-900 border-cyan-400/70 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.22)]",
+                    !isRoot && !isMastered && "bg-slate-900 border-indigo-400/50 text-indigo-200 shadow-[0_0_8px_rgba(99,102,241,0.15)]"
+                  )}
+                  style={{ left: `${n.x}%`, top: `${n.y}%` }}
+                >
+                  {isMastered && !isRoot && <Check className="h-2 w-2 inline mr-0.5" />}
+                  {isRoot && <AlertTriangle className="h-2 w-2 inline mr-0.5" />}
+                  {n.label}
+                </div>
+              )
+            })}
+
+            {/* Top-right status card */}
+            <div className="absolute top-3 right-3 transition-all duration-500">
+              {phase === 0 && (
+                <div className="bg-white/5 backdrop-blur border border-white/10 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-white/60 text-[9px]">준비 완료</span>
+                </div>
+              )}
+              {phase === 1 && (
+                <div className="bg-primary/10 backdrop-blur border border-primary/30 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 min-w-[140px]">
+                  <Bot className="h-2.5 w-2.5 text-primary" />
+                  <span className="text-primary text-[9px] font-medium">Proposer 추론 중...</span>
+                </div>
+              )}
+              {showResult && (
+                <div className="bg-red-500/10 backdrop-blur border border-red-500/30 rounded-lg px-2.5 py-1.5 min-w-[140px] animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <AlertTriangle className="h-2.5 w-2.5 text-red-400" />
+                    <span className="text-red-300 text-[9px] font-semibold">근본 원인 발견</span>
+                  </div>
+                  <div className="text-white text-[10px] font-bold">행렬식</div>
+                  <div className="text-white/50 text-[8px]">확신도 89%</div>
+                </div>
+              )}
+            </div>
+
+            {/* Verifier agent trace popup */}
+            {showVerifier && (
+              <div className="absolute bottom-3 left-3 bg-blue-500/10 backdrop-blur border border-blue-500/30 rounded-lg px-3 py-2 max-w-[200px] animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Shield className="h-2.5 w-2.5 text-blue-400" />
+                  <span className="text-blue-300 text-[9px] font-semibold">Verifier · 동의</span>
+                </div>
+                <p className="text-white/60 text-[9px] leading-tight">
+                  행렬식 결손이 가장 근본적 원인으로 확인됨
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom status bar */}
+        <div className="flex items-center justify-between px-4 py-2 bg-black/60 border-t border-white/5">
+          <div className="flex items-center gap-2 text-[9px] text-white/40">
+            <span className="flex items-center gap-1">
+              <Zap className="h-2 w-2 text-primary" />
+              Harness
+            </span>
+            <span>·</span>
+            <span className="font-mono tabular-nums text-white/50">{PHASE_TOKENS[phase]} tokens</span>
+            <span>·</span>
+            <span className="font-mono tabular-nums text-white/50">{PHASE_LATENCY[phase].toFixed(1)}s</span>
+          </div>
+          <div className="flex items-center gap-1 text-[9px] text-white/40">
+            <div className={cn(
+              "w-1 h-1 rounded-full transition-colors duration-300",
+              phase === 0 && "bg-white/30",
+              phase > 0 && phase < 3 && "bg-amber-400 animate-pulse",
+              phase === 3 && "bg-emerald-500"
+            )} />
+            {phase === 0 ? "대기" : phase < 3 ? "처리 중" : "완료"}
+          </div>
+        </div>
+      </div>
+
+      {/* Stepper — 중앙 정렬, idle에서도 각 스텝 명확 */}
+      <div className="mt-8 flex justify-center">
+        <div className="flex items-start w-full max-w-md px-4">
+          {([
+            { num: 1, label: "대기" },
+            { num: 2, label: "분석" },
+            { num: 3, label: "탐지" },
+            { num: 4, label: "검증" },
+          ] as const).map((step, i, arr) => {
+            const isActive = phase === i
+            const isPast = phase > i
+            return (
+              <Fragment key={i}>
+                {/* Circle + label (고정 너비) */}
+                <div className="flex flex-col items-center gap-2 shrink-0 w-14">
+                  <div
+                    className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-500",
+                      isActive &&
+                        "bg-primary border-primary text-primary-foreground shadow-[0_0_16px_rgba(168,85,247,0.6)] scale-110",
+                      isPast &&
+                        "bg-primary/25 border-primary/70 text-primary",
+                      !isActive && !isPast &&
+                        "bg-slate-900 border-white/25 text-white/50"
+                    )}
+                  >
+                    {isPast ? <Check className="h-3.5 w-3.5" /> : step.num}
+                  </div>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span
+                      className={cn(
+                        "text-[10px] font-semibold transition-colors",
+                        isActive && "text-primary",
+                        isPast && "text-primary/70",
+                        !isActive && !isPast && "text-white/40"
+                      )}
+                    >
+                      Step {step.num}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[9px] transition-colors whitespace-nowrap",
+                        isActive && "text-white",
+                        isPast && "text-white/60",
+                        !isActive && !isPast && "text-white/30"
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                </div>
+                {/* Connector line (마지막 스텝 뒤엔 없음) */}
+                {i < arr.length - 1 && (
+                  <div className="flex-1 h-[2px] mt-[15px] mx-1 rounded-full overflow-hidden bg-white/10">
+                    <div
+                      className={cn(
+                        "h-full bg-primary/70 transition-all duration-700",
+                        isPast ? "w-full" : "w-0"
+                      )}
+                    />
+                  </div>
+                )}
+              </Fragment>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Simple Carousel Component (arrows + dots only) ──
 function SubjectCarousel() {
@@ -183,29 +705,50 @@ function SubjectCarousel() {
             style={{ perspective: "1200px" }}
         >
           <div className="absolute inset-0 flex items-center justify-center" style={{ transformStyle: "preserve-3d" }}>
-            {subjects.map((subject, index) => (
+            {subjects.map((subject, index) => {
+              const colors = SUBJECT_COLORS[subject.color]
+              const Icon = subject.icon
+              return (
                 <div
                     key={subject.label}
                     className={cn(
-                        "absolute w-56 h-40 rounded-2xl p-5 transition-all duration-500 ease-out",
-                        "bg-gradient-to-br from-card to-muted border border-border",
+                        "absolute w-56 h-40 rounded-2xl p-5 transition-all duration-500 ease-out overflow-hidden",
+                        "bg-card border",
+                        colors.cardBorder,
                         "shadow-xl",
                         index === currentIndex && "ring-2 ring-primary/50"
                     )}
                     style={getCardStyle(index)}
                 >
-                  <div className="h-full flex flex-col justify-between">
+                  {/* Watermark icon — 배경 대형 아이콘 */}
+                  <Icon
+                    className={cn(
+                      "absolute -bottom-4 -right-4 h-24 w-24 pointer-events-none",
+                      colors.watermark
+                    )}
+                    strokeWidth={1.5}
+                  />
+
+                  {/* Top-right icon — 컨테이너 없이 아이콘만 */}
+                  <Icon
+                    className={cn("absolute top-4 right-4 h-6 w-6", colors.iconColor)}
+                    strokeWidth={2.5}
+                  />
+
+                  {/* Content */}
+                  <div className="relative h-full flex flex-col justify-between pr-10">
                     <div>
-                      <h3 className="text-lg font-bold text-foreground mb-1">{subject.label}</h3>
-                      <p className="text-xs text-muted-foreground">{subject.desc}</p>
+                      <h3 className="text-lg font-bold text-foreground mb-1 leading-tight">{subject.label}</h3>
+                      <p className="text-xs text-muted-foreground leading-snug">{subject.desc}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-primary text-xs font-medium">
+                    <div className={cn("flex items-center gap-1 text-xs font-medium", colors.linkColor)}>
                       <span>탐색하기</span>
                       <ArrowRight className="h-3 w-3" />
                     </div>
                   </div>
                 </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -472,6 +1015,27 @@ export default function LandingPage() {
                 <rect width="100%" height="100%" fill="url(#heroGrid)" />
               </svg>
             </div>
+
+            {/* Floating animated orbs */}
+            <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/20 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: "4s" }} />
+            <div className="absolute bottom-1/4 -right-20 w-[500px] h-[500px] bg-blue-500/15 rounded-full blur-[140px] animate-pulse" style={{ animationDuration: "6s", animationDelay: "1s" }} />
+            <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-purple-500/10 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: "5s", animationDelay: "2s" }} />
+
+            {/* Floating particles */}
+            <div className="absolute inset-0 overflow-hidden">
+              {[...Array(20)].map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute w-1 h-1 rounded-full bg-white/30"
+                  style={{
+                    left: `${(i * 37) % 100}%`,
+                    top: `${(i * 53) % 100}%`,
+                    animation: `float ${8 + (i % 4)}s ease-in-out infinite`,
+                    animationDelay: `${i * 0.3}s`,
+                  }}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Dark overlay */}
@@ -588,17 +1152,8 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              {/* Main video placeholder */}
-              <div className="relative rounded-3xl overflow-hidden border border-border/50 shadow-2xl bg-muted aspect-video group cursor-pointer">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-transparent flex items-center justify-center">
-                  <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center group-hover:scale-110 transition-transform shadow-2xl">
-                    <Play className="h-10 w-10 text-white ml-1" />
-                  </div>
-                </div>
-                <div className="absolute top-6 left-6 bg-black/40 backdrop-blur-sm text-white text-xs px-4 py-2 rounded-full font-medium">
-                  LIVE DEMO
-                </div>
-              </div>
+              {/* Main live demo mockup */}
+              <LinkerDemoMockup />
             </div>
           </div>
         </section>

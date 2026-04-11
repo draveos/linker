@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
-import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap } from "lucide-react"
+import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap, Bot, Shield, RefreshCw, ChevronDown, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import type { AgentTraceEntry, ExitReason } from "@/app/api/analyze-error/route"
 
 export interface SelectedNode {
   id: string
@@ -27,6 +28,9 @@ export interface AiRemedyContent {
   }
   confidence: number
   traversalPath: string[]
+  agentTrace?: AgentTraceEntry[]
+  verificationRounds?: number
+  exitReason?: ExitReason
 }
 
 interface RemedyPanelProps {
@@ -136,6 +140,7 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
   const [mounted, setMounted] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
+  const [showTrace, setShowTrace] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -145,6 +150,7 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
   useEffect(() => {
     setSelectedAnswer(null)
     setShowResult(false)
+    setShowTrace(false)
   }, [selectedNode?.id])
 
   const isOpen = selectedNode !== null
@@ -171,14 +177,44 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
       ? { ...staticContent, microLearningContent: undefined, confidence: undefined, traversalPath: undefined }
       : null
 
+  // 클라이언트에서 한 번 더 Fisher-Yates 셔플 — 특히 하드코딩 fallback 대응
+  // selectedNode.id가 바뀔 때마다 새로 셔플
+  const shuffledQuiz = useMemo(() => {
+    if (!content) return null
+    const q = content.quiz
+    const correctText = q.options[q.answer]
+    const out = [...q.options]
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[out[i], out[j]] = [out[j], out[i]]
+    }
+    return {
+      question: q.question,
+      options: out,
+      answer: out.indexOf(correctText),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode?.id, !!aiContent])
+
   const handleAnswerClick = (idx: number) => {
     setSelectedAnswer(idx)
     setShowResult(true)
   }
 
-  if (!isOpen || !content || !mounted) return null
+  if (!isOpen || !content || !shuffledQuiz || !mounted) return null
 
-  const isCorrect = selectedAnswer === content.quiz.answer
+  const isCorrect = selectedAnswer === shuffledQuiz.answer
+
+  // 학습 완료 버튼 게이트 — 결손 노드는 퀴즈 정답 후에만 클릭 가능
+  const isMissingNode = selectedNode.type === "missing"
+  const quizPassed = showResult && isCorrect
+  const canMarkComplete = !isMissingNode || quizPassed
+
+  const markButtonText =
+    isMissingNode && !quizPassed ? "퀴즈를 먼저 풀어주세요" :
+    isMissingNode ? "이해 확인됨 · 학습 필요로 이동" :
+    selectedNode.type === "mastered" ? "학습 미완료로 되돌리기" :
+    "학습 완료로 표시"
 
   const panelContent = (
     <div 
@@ -252,6 +288,150 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
             <p className="text-sm text-foreground/80 leading-relaxed">{content.explanation}</p>
           </div>
 
+          {/* AI 분석 추적 (Harness trace) */}
+          {aiContent?.agentTrace && aiContent.agentTrace.length > 0 && (() => {
+            const trace = aiContent.agentTrace
+            const proposerRounds = trace.filter((t) => t.role === "proposer").length
+            const totalRounds = Math.max(proposerRounds, 1)
+            const exitLabel: Record<ExitReason, { text: string; color: string }> = {
+              confidence_high: { text: "높은 확신도로 종료", color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+              verifier_agreed: { text: "Verifier 동의로 종료", color: "bg-blue-500/15 text-blue-700 dark:text-blue-400" },
+              converged:       { text: "수렴 감지로 종료",    color: "bg-purple-500/15 text-purple-700 dark:text-purple-400" },
+              max_rounds:      { text: "Max 라운드 도달",     color: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+            }
+            const exit = aiContent.exitReason ? exitLabel[aiContent.exitReason] : null
+
+            return (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <button
+                onClick={() => setShowTrace(!showTrace)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-muted/40 hover:bg-muted/60 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold text-foreground">AI 분석 과정</span>
+                </div>
+                <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showTrace && "rotate-180")} />
+              </button>
+
+              {/* 계측 배지 스트립 */}
+              <div className="px-4 py-2.5 bg-muted/20 border-t border-border flex flex-wrap items-center gap-1.5">
+                <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                  <Bot className="h-2.5 w-2.5" />
+                  에이전트 {trace.length}회
+                </span>
+                <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-400">
+                  <RefreshCw className="h-2.5 w-2.5" />
+                  {totalRounds}라운드
+                </span>
+                {(aiContent.verificationRounds ?? 0) > 0 && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                    <Shield className="h-2.5 w-2.5" />
+                    검증 {aiContent.verificationRounds}회
+                  </span>
+                )}
+                {exit && (
+                  <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", exit.color)}>
+                    {exit.text}
+                  </span>
+                )}
+              </div>
+
+              {showTrace && (
+                <div className="p-4 space-y-3 bg-background">
+                  {aiContent.agentTrace.map((entry, i) => {
+                    if (entry.role === "proposer") {
+                      return (
+                        <div key={i} className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                              {entry.round === 1 ? (
+                                <Bot className="h-3 w-3 text-white" />
+                              ) : (
+                                <RefreshCw className="h-3 w-3 text-white" />
+                              )}
+                            </div>
+                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">
+                              Proposer · Round {entry.round}
+                            </span>
+                            <span className="ml-auto text-[10px] text-muted-foreground">
+                              확신도 <strong className="text-foreground">{Math.round(entry.confidence * 100)}%</strong>
+                            </span>
+                          </div>
+                          <div className="pl-7 space-y-1">
+                            <p className="text-xs">
+                              <span className="text-muted-foreground">제안: </span>
+                              <strong className="text-foreground">{entry.nodeLabel}</strong>
+                              <span className="text-muted-foreground"> (ID: {entry.nodeId})</span>
+                            </p>
+                            <p className="text-xs text-foreground/70 leading-relaxed">{entry.reasoning}</p>
+                            {entry.triggeredByCritique && (
+                              <div className="mt-2 pt-2 border-t border-blue-500/10">
+                                <p className="text-[10px] text-muted-foreground italic">
+                                  ↑ 검증자의 피드백을 반영하여 재분석됨
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+                    // verifier
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          "rounded-lg border p-3 space-y-1.5",
+                          entry.agree
+                            ? "border-green-500/20 bg-green-500/5"
+                            : "border-amber-500/20 bg-amber-500/5"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={cn(
+                              "w-5 h-5 rounded-full flex items-center justify-center shrink-0",
+                              entry.agree ? "bg-green-500" : "bg-amber-500"
+                            )}
+                          >
+                            <Shield className="h-3 w-3 text-white" />
+                          </div>
+                          <span
+                            className={cn(
+                              "text-xs font-semibold",
+                              entry.agree ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"
+                            )}
+                          >
+                            Verifier · Round {entry.round}
+                          </span>
+                          <span
+                            className={cn(
+                              "ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full",
+                              entry.agree
+                                ? "bg-green-500/15 text-green-700 dark:text-green-400"
+                                : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                            )}
+                          >
+                            {entry.agree ? "✓ 동의" : "✗ 반박"}
+                          </span>
+                        </div>
+                        {entry.critique && (
+                          <p className="pl-7 text-xs text-foreground/70 leading-relaxed">{entry.critique}</p>
+                        )}
+                        {entry.suggestedNodeId && !entry.agree && (
+                          <p className="pl-7 text-[10px] text-muted-foreground">
+                            대안 노드 ID: <code className="text-foreground">{entry.suggestedNodeId}</code>
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            )
+          })()}
+
           {/* 3-Minute Micro-Learning */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -310,22 +490,39 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
           )}
 
           {/* Quick Quiz */}
-          <div className="rounded-xl border border-border p-4 bg-muted/30">
-            <h3 className="text-sm font-semibold text-foreground mb-3">확인 퀴즈</h3>
-            <p className="text-sm text-foreground mb-3">{content.quiz.question}</p>
+          <div className={cn(
+            "rounded-xl border p-4 transition-colors",
+            isMissingNode && !quizPassed && "border-amber-500/30 bg-amber-500/5",
+            !(isMissingNode && !quizPassed) && "border-border bg-muted/30"
+          )}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground">확인 퀴즈</h3>
+              {isMissingNode && (
+                <span className={cn(
+                  "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                  quizPassed
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                )}>
+                  {quizPassed ? "✓ 통과" : "필수"}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-foreground mb-3">{shuffledQuiz.question}</p>
             <div className="space-y-2">
-              {content.quiz.options.map((option, idx) => (
+              {shuffledQuiz.options.map((option, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleAnswerClick(idx)}
                   disabled={showResult}
                   className={cn(
                     "w-full text-left text-sm px-4 py-2.5 rounded-lg border transition-colors",
-                    showResult && idx === content.quiz.answer && "bg-green-100 border-green-500 text-green-800 dark:bg-green-950 dark:border-green-700 dark:text-green-300",
-                    showResult && selectedAnswer === idx && idx !== content.quiz.answer && "bg-red-100 border-red-500 text-red-800 dark:bg-red-950 dark:border-red-700 dark:text-red-300",
+                    showResult && idx === shuffledQuiz.answer && "bg-green-100 border-green-500 text-green-800 dark:bg-green-950 dark:border-green-700 dark:text-green-300",
+                    showResult && selectedAnswer === idx && idx !== shuffledQuiz.answer && "bg-red-100 border-red-500 text-red-800 dark:bg-red-950 dark:border-red-700 dark:text-red-300",
                     !showResult && "border-border bg-card hover:bg-primary/5 hover:border-primary/30"
                   )}
                 >
+                  <span className="text-xs text-muted-foreground mr-2">{String.fromCharCode(65 + idx)}.</span>
                   {option}
                 </button>
               ))}
@@ -341,11 +538,18 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered }
         {/* Footer */}
         <div className="p-5 border-t border-border bg-muted/30 shrink-0">
           <Button
-            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium"
-            onClick={() => onMarkMastered && selectedNode && onMarkMastered(selectedNode.id)}
+            disabled={!canMarkComplete}
+            className={cn(
+              "w-full h-11 font-medium transition-all",
+              canMarkComplete
+                ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25"
+                : "bg-muted text-muted-foreground cursor-not-allowed hover:bg-muted"
+            )}
+            onClick={() => canMarkComplete && onMarkMastered && selectedNode && onMarkMastered(selectedNode.id)}
           >
-            학습 완료로 표시
-            <ArrowRight className="h-4 w-4 ml-2" />
+            {!canMarkComplete && <Lock className="h-4 w-4 mr-2" />}
+            {markButtonText}
+            {canMarkComplete && <ArrowRight className="h-4 w-4 ml-2" />}
           </Button>
         </div>
       </div>

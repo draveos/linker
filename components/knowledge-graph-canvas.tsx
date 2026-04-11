@@ -21,7 +21,7 @@ import ReactFlow, {
   BaseEdge,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2 } from "lucide-react"
+import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -66,10 +66,16 @@ interface KnowledgeGraphCanvasProps {
   activeRootCauseId?: string | null
   isAnalyzing?: boolean
   analysisStep?: number
+  analysisStepLabels?: string[]   // SSE로 받은 동적 스텝 라벨
   nodes: KnowledgeNode[]
   masteredNodeIds: string[]
   domain: string
   traversalPath?: string[] | null
+  savedPositions?: Record<string, { x: number; y: number }>
+  onSaveGraph?: (
+    nodes: KnowledgeNode[],
+    positions: Record<string, { x: number; y: number }>
+  ) => void
 }
 
 interface DeleteConfirmState {
@@ -315,14 +321,16 @@ export function KnowledgeGraphCanvas({
                                        activeRootCauseId,
                                        isAnalyzing,
                                        analysisStep,
+                                       analysisStepLabels,
                                        nodes: knowledgeNodes,
                                        masteredNodeIds,
                                        domain,
                                        traversalPath,
+                                       savedPositions,
+                                       onSaveGraph,
                                      }: KnowledgeGraphCanvasProps) {
   const [editMode, setEditMode] = useState(false)
   const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
-  const [showAiSuggestion, setShowAiSuggestion] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({
     type: null,
     id: null,
@@ -331,6 +339,12 @@ export function KnowledgeGraphCanvas({
   const [skipDeleteConfirm, setSkipDeleteConfirm] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [traversalAnimEdges, setTraversalAnimEdges] = useState<Set<string>>(new Set())
+  // AI 정리 관련
+  const [showAiOrganizeConfirm, setShowAiOrganizeConfirm] = useState(false)
+  const [skipAiOrganizeConfirm, setSkipAiOrganizeConfirm] = useState(false)
+  const [aiOrganizeToast, setAiOrganizeToast] = useState<{ type: "success" | "empty"; visible: boolean } | null>(null)
+  const aiOrganizeSnapshotRef = useRef<Array<{ id: string; position: { x: number; y: number } }> | null>(null)
+  const aiToastTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const errorTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const traversalTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
@@ -372,7 +386,9 @@ export function KnowledgeGraphCanvas({
 
   const buildNodes = useCallback(
       (kNodes: KnowledgeNode[], mIds: string[], rootCauseId?: string | null, fType = "all"): Node[] => {
-        const positions = computeLayout(kNodes)
+        const autoPositions = computeLayout(kNodes)
+        // savedPositions 우선, 없는 노드는 auto-layout으로 fallback
+        const positions = { ...autoPositions, ...(savedPositions ?? {}) }
         return kNodes.map((node) => {
           const nodeType = resolveNodeType(node.id, mIds, rootCauseId)
           const isFiltered = fType !== "all" && fType !== nodeType
@@ -394,7 +410,7 @@ export function KnowledgeGraphCanvas({
           }
         })
       },
-      [isAnalyzing, selectedNodeId]
+      [isAnalyzing, selectedNodeId, savedPositions]
   )
 
   const buildEdges = useCallback(
@@ -573,17 +589,30 @@ export function KnowledgeGraphCanvas({
   }, [nodes, edges])
 
   const saveChanges = useCallback(async () => {
-    // TODO: 서버 저장 로직
-    // await fetch('/api/graph/save', {
-    //   method: 'POST',
-    //   body: JSON.stringify({
-    //     nodes: nodes.map(n => ({ id: n.id, position: n.position, label: n.data.label })),
-    //     edges: edges.map(e => ({ source: e.source, target: e.target }))
-    //   })
-    // })
+    // ReactFlow 상태 → KnowledgeNode[] + positions 추출
+    // prerequisites는 edges에서 역으로 계산 (타겟 = 현재 노드, 소스들 = prereqs)
+    const updatedNodes: KnowledgeNode[] = nodes.map((n) => {
+      const prereqs = edges
+        .filter((e) => e.target === n.id)
+        .map((e) => e.source)
+      return {
+        id: n.id,
+        label: (n.data.label as string) ?? "",
+        description: (n.data.description as string) ?? "",
+        prerequisites: prereqs,
+        confidence: n.data.confidence as number | undefined,
+      }
+    })
+
+    const positions: Record<string, { x: number; y: number }> = {}
+    nodes.forEach((n) => {
+      positions[n.id] = { x: n.position.x, y: n.position.y }
+    })
+
+    onSaveGraph?.(updatedNodes, positions)
     snapshotRef.current = null
     setEditMode(false)
-  }, [])
+  }, [nodes, edges, onSaveGraph])
 
   const cancelChanges = useCallback(() => {
     if (snapshotRef.current) {
@@ -698,21 +727,96 @@ export function KnowledgeGraphCanvas({
       []
   )
 
-  const requestAiOrganize = useCallback(() => {
-    setShowAiSuggestion(true)
-    // TODO: AI 레이아웃 최적화 API 연동
+  // ── AI 정리 (confirm + rollback + toast) ─────────────────
+
+  const showOrganizeToast = useCallback((type: "success" | "empty") => {
+    clearTimeout(aiToastTimerRef.current)
+    setAiOrganizeToast({ type, visible: true })
+    aiToastTimerRef.current = setTimeout(() => {
+      setAiOrganizeToast((prev) => (prev ? { ...prev, visible: false } : null))
+    }, 2500)
   }, [])
+
+  const requestAiOrganize = useCallback(() => {
+    const autoPositions = computeLayout(knowledgeNodes)
+
+    // 정리할 게 있는지 — 현재 위치가 auto-layout과 10px 이상 다르면 "정리 가능"
+    const hasChanges = nodes.some((n) => {
+      const auto = autoPositions[n.id]
+      if (!auto) return false
+      return Math.abs(n.position.x - auto.x) > 10 || Math.abs(n.position.y - auto.y) > 10
+    })
+
+    if (!hasChanges) {
+      showOrganizeToast("empty")
+      return
+    }
+
+    // 롤백용 스냅샷 저장
+    aiOrganizeSnapshotRef.current = nodes.map((n) => ({
+      id: n.id,
+      position: { x: n.position.x, y: n.position.y },
+    }))
+
+    // 프리뷰: 즉시 적용
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        position: autoPositions[n.id] ?? n.position,
+      }))
+    )
+
+    // 오늘 "다시 묻지 않기" 체크 상태면 confirm 스킵하고 바로 성공 토스트
+    const today = new Date().toDateString()
+    if (typeof window !== "undefined" && localStorage.getItem("linker_ai_organize_skip_until") === today) {
+      aiOrganizeSnapshotRef.current = null
+      showOrganizeToast("success")
+      return
+    }
+
+    setShowAiOrganizeConfirm(true)
+  }, [nodes, knowledgeNodes, setNodes, showOrganizeToast])
+
+  const confirmAiOrganize = useCallback(() => {
+    if (skipAiOrganizeConfirm && typeof window !== "undefined") {
+      const today = new Date().toDateString()
+      localStorage.setItem("linker_ai_organize_skip_until", today)
+    }
+    aiOrganizeSnapshotRef.current = null
+    setShowAiOrganizeConfirm(false)
+    showOrganizeToast("success")
+  }, [skipAiOrganizeConfirm, showOrganizeToast])
+
+  const cancelAiOrganize = useCallback(() => {
+    // 스냅샷으로 롤백
+    const snapshot = aiOrganizeSnapshotRef.current
+    if (snapshot) {
+      setNodes((nds) =>
+        nds.map((n) => {
+          const snap = snapshot.find((s) => s.id === n.id)
+          return snap ? { ...n, position: snap.position } : n
+        })
+      )
+    }
+    aiOrganizeSnapshotRef.current = null
+    setShowAiOrganizeConfirm(false)
+  }, [setNodes])
 
   // ─────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────
 
-  const analysisSteps = [
-    "문제를 관련 개념에 매핑 중...",
-    "풀이 과정 분석 및 오류 탐지 중...",
-    "선행 개념 의존성 추적 중...",
+  // SSE에서 받은 동적 라벨 우선, 없으면 기본값
+  const defaultSteps = [
+    "오류 패턴 분석 중...",
+    "근본 원인 추론 중...",
+    "AI 교차 검증 중...",
+    "피드백 반영해 재분석 중...",
     "결손 개념 확정 완료",
   ]
+  const analysisSteps = analysisStepLabels && analysisStepLabels.length > 0
+    ? analysisStepLabels
+    : defaultSteps
 
   return (
       <GraphEditContext.Provider value={contextValue}>
@@ -762,35 +866,55 @@ export function KnowledgeGraphCanvas({
               <div className="absolute inset-0 bg-background/60 backdrop-blur-sm z-20 flex items-center justify-center">
                 <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4">
                   <div className="flex flex-col items-center gap-5">
-                    <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                    <div className="relative">
+                      <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                      {/* 검증 라운드 진행 중 표시 */}
+                      {(analysisStep ?? 0) >= 3 && (
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                          <span className="text-[8px] text-white font-bold">AI</span>
+                        </div>
+                      )}
+                    </div>
                     <div className="w-full space-y-2">
-                      {analysisSteps.map((step, idx) => (
+                      {analysisSteps.map((step, idx) => {
+                        const stepNum = idx + 1
+                        const current = analysisStep ?? 0
+                        const isDone = stepNum < current
+                        const isActive = stepNum === current
+                        const isPending = stepNum > current
+                        // verifier/re-propose 스텝은 amber 색으로 구분
+                        const isVerifyStep = stepNum === 3 || stepNum === 4
+                        return (
                           <div
                               key={idx}
                               className={cn(
-                                  "flex items-center gap-3 p-2.5 rounded-lg transition-all",
-                                  idx <= (analysisStep ?? 0)
-                                      ? "bg-primary/10 border border-primary/30"
-                                      : "bg-muted/50 border border-transparent opacity-40"
+                                  "flex items-center gap-3 p-2.5 rounded-lg transition-all duration-300",
+                                  isDone && "bg-primary/10 border border-primary/30",
+                                  isActive && isVerifyStep && "bg-amber-500/10 border border-amber-500/30",
+                                  isActive && !isVerifyStep && "bg-primary/10 border border-primary/30",
+                                  isPending && "bg-muted/50 border border-transparent opacity-30"
                               )}
                           >
                             <div
                                 className={cn(
                                     "w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0",
-                                    idx <= (analysisStep ?? 0)
-                                        ? "bg-primary border-primary text-primary-foreground"
-                                        : "border-muted-foreground text-muted-foreground"
+                                    isDone && "bg-primary border-primary text-primary-foreground",
+                                    isActive && isVerifyStep && "bg-amber-500 border-amber-500 text-white",
+                                    isActive && !isVerifyStep && "bg-primary border-primary text-primary-foreground",
+                                    isPending && "border-muted-foreground text-muted-foreground"
                                 )}
                             >
-                              {idx < (analysisStep ?? 0) ? (
-                                  <Check className="h-3 w-3" />
-                              ) : (
-                                  idx + 1
-                              )}
+                              {isDone ? <Check className="h-3 w-3" /> : stepNum}
                             </div>
-                            <span className="text-sm">{step}</span>
+                            <span className={cn(
+                              "text-sm",
+                              isActive && isVerifyStep && "text-amber-700 dark:text-amber-400 font-medium"
+                            )}>
+                              {step}
+                            </span>
                           </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 </div>
@@ -870,29 +994,66 @@ export function KnowledgeGraphCanvas({
               </div>
           )}
 
-          {/* ── AI Suggestion Bubble ── */}
-          {showAiSuggestion && (
-              <div className="absolute bottom-20 right-4 z-20 max-w-xs animate-in slide-in-from-bottom-4">
-                <div className="bg-card border border-border rounded-2xl p-4 shadow-xl">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary/10 rounded-full shrink-0">
-                      <MessageCircle className="h-4 w-4 text-primary" />
+          {/* ── AI 정리 Confirm Modal ── */}
+          {showAiOrganizeConfirm && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4 animate-in zoom-in-95">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-primary/10 rounded-full">
+                      <Sparkles className="h-5 w-5 text-primary" />
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-foreground leading-relaxed">
-                        보니까 <strong>행렬식</strong> 개념에서 자주 막히시는 것 같아요!{" "}
-                        <strong>행렬 곱셈</strong>부터 차근차근 복습해볼까요?
-                      </p>
-                      <div className="flex gap-2 mt-3">
-                        <Button size="sm" variant="default" className="h-8">
-                          네, 시작할게요
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-8" onClick={() => setShowAiSuggestion(false)}>
-                          나중에
-                        </Button>
-                      </div>
-                    </div>
+                    <h3 className="text-lg font-semibold text-foreground">AI 정리</h3>
                   </div>
+                  <p className="text-sm text-muted-foreground mb-5">
+                    개념 의존성을 분석해 노드 위치를 최적화했어요. <br/>
+                    <strong className="text-foreground">반영하시겠어요?</strong>
+                  </p>
+                  <label className="flex items-center gap-2 mb-5 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={skipAiOrganizeConfirm}
+                        onChange={(e) => setSkipAiOrganizeConfirm(e.target.checked)}
+                        className="w-4 h-4 rounded border-border accent-primary"
+                    />
+                    <span className="text-xs text-muted-foreground">오늘은 다시 묻지 않기</span>
+                  </label>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" size="sm" onClick={cancelAiOrganize}>
+                      아니요.
+                    </Button>
+                    <Button size="sm" onClick={confirmAiOrganize}>
+                      네!
+                    </Button>
+                  </div>
+                </div>
+              </div>
+          )}
+
+          {/* ── AI 정리 Toast ── */}
+          {aiOrganizeToast && (
+              <div className={cn(
+                "absolute bottom-6 left-1/2 -translate-x-1/2 z-30 transition-all duration-500",
+                aiOrganizeToast.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+              )}>
+                <div className={cn(
+                  "bg-card border rounded-xl shadow-lg px-4 py-2.5 flex items-center gap-2.5",
+                  aiOrganizeToast.type === "success" ? "border-emerald-500/30" : "border-border"
+                )}>
+                  {aiOrganizeToast.type === "success" ? (
+                    <>
+                      <div className="w-6 h-6 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <span className="text-sm font-medium text-foreground">정리가 되었어요!</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center">
+                        <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                      <span className="text-sm font-medium text-foreground">정리할 게 없어요!</span>
+                    </>
+                  )}
                 </div>
               </div>
           )}
