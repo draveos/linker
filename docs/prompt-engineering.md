@@ -21,7 +21,7 @@
 3|행렬 곱셈|행렬 간의 곱셈 연산|prereqs:2
 4|행렬식|행렬식(Determinant) 계산법|prereqs:3
 ```
-한 노드당 약 30-40 토큰. **약 40% 절감**.
+한 노드당 약 30-40 토큰. 약 40% 절감.
 
 ### 구현
 ```ts
@@ -59,8 +59,8 @@ JSON만 반환:
 {"nodeId":"ID","nodeLabel":"이름","confidence":0.85,"reasoning":"간결한 판단 근거"}
 ```
 
-**핵심**:
-- **"JSON만 반환"**을 두 번 강조 (제목 + 마지막)
+핵심:
+- "JSON만 반환"을 두 번 강조 (제목 + 마지막)
 - Reasoning 길이 제한으로 토큰 낭비 방지
 - critique는 있을 때만 섹션 추가 (없을 땐 빈 문자열)
 
@@ -90,7 +90,7 @@ JSON만:
 {"agree":true,"critique":"반박 시에만 이유","suggestedNodeId":"반박 시 대안 ID"}
 ```
 
-**핵심 트릭 — 선행 개념 별도 주입**:
+핵심 트릭 — 선행 개념 별도 주입:
 ```ts
 const proposedNode = nodes.find((n) => n.id === proposal.nodeId)
 const prereqInfo = proposedNode?.prerequisites
@@ -101,9 +101,9 @@ const prereqInfo = proposedNode?.prerequisites
   .join(", ") || "없음"
 ```
 
-Verifier가 전체 노드 리스트에서 prereq를 찾아내지 않아도 되도록 **사전 계산해서 직접 주입**. → 더 정확한 판단 + 토큰 절약.
+Verifier가 전체 노드 리스트에서 prereq를 찾아내지 않아도 되도록 사전 계산해서 직접 주입. → 더 정확한 판단 + 토큰 절약.
 
-**False Alarm 방지 문구**: "애매하면 agree=true" — 과도한 루프를 막는 가장 중요한 지시.
+False Alarm 방지 문구: "애매하면 agree=true" — 과도한 루프를 막는 가장 중요한 지시.
 
 ## 4. Content Generator 프롬프트
 
@@ -138,7 +138,7 @@ JSON만 반환:
 }
 ```
 
-**핵심**:
+핵심:
 - 출력 스키마를 예시로 명시 (주석 포함)
 - 각 필드마다 길이 가이드 ("2-3문장", "200자 내외")
 - `traversalPath`의 마지막 요소가 반드시 finalNodeId임을 스키마에 명시
@@ -175,7 +175,7 @@ status = "needs_more" | "sufficient" | "irrelevant" | "off_topic"
 
 ## 6. 그래프 생성 (Sonnet)
 
-Sonnet은 Haiku보다 더 강력하지만, **출력 스키마 준수가 느슨**할 수 있음. 예시 JSON을 프롬프트에 포함하는 것이 핵심.
+Sonnet은 Haiku보다 더 강력하지만, 출력 스키마 준수가 느슨할 수 있음. 예시 JSON을 프롬프트에 포함하는 것이 핵심.
 
 ```
 강의 텍스트로부터 지식 그래프를 생성하세요.
@@ -202,7 +202,7 @@ Sonnet은 Haiku보다 더 강력하지만, **출력 스키마 준수가 느슨**
 JSON만 반환.
 ```
 
-**클라이언트 사이드 검증**:
+클라이언트 사이드 검증:
 - `detectCycle()` 함수로 사이클 검사
 - 실패 시 에러 반환 (Sonnet 재호출 없음)
 
@@ -239,14 +239,14 @@ Haiku streaming, 2가지 모드:
 
 ## 8. 프롬프트 관리 원칙
 
-1. **모든 프롬프트는 소스 코드 안에** — 별도 config 파일 X
-2. **상수 명명**: `CONFIDENCE_THRESHOLD`, `MAX_ROUNDS` 등으로 magic number 제거
-3. **"JSON만 반환"은 반드시 두 번 강조** — 프롬프트 상단 + 하단
-4. **출력 스키마는 예시 형태로** — 필드 설명은 주석으로
-5. **제약은 명시적으로** — "애매하면 true", "없으면 빈 문자열" 등
+1. 모든 프롬프트는 소스 코드 안에 — 별도 config 파일 X
+2. 상수 명명: `CONFIDENCE_THRESHOLD`, `MAX_ROUNDS` 등으로 magic number 제거
+3. "JSON만 반환"은 반드시 두 번 강조 — 프롬프트 상단 + 하단
+4. 출력 스키마는 예시 형태로 — 필드 설명은 주석으로
+5. 제약은 명시적으로 — "애매하면 true", "없으면 빈 문자열" 등
 
 ## 9. 향후 개선 아이디어
 
-- **Prompt caching** (Anthropic beta): 노드 리스트는 매 호출마다 동일 → 캐시하면 입력 토큰 비용 감소
-- **Structured output (tools API)**: JSON 파싱 에러 원천 차단
-- **A/B 테스트**: 프롬프트 변형을 Git 브랜치로 관리해 confidence 분포 비교
+- Prompt caching (Anthropic beta): 노드 리스트는 매 호출마다 동일 → 캐시하면 입력 토큰 비용 감소
+- Structured output (tools API): JSON 파싱 에러 원천 차단
+- A/B 테스트: 프롬프트 변형을 Git 브랜치로 관리해 confidence 분포 비교

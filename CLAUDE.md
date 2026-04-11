@@ -2,26 +2,26 @@
 
 ## 프로젝트 개요
 
-Linker는 **AI 지식 그래프 기반 학습 결손 추적 솔루션**입니다. 학생의 오답을 분석해 지식 그래프의 근본 원인 노드를 찾아주고, 맞춤형 마이크로 러닝을 제공합니다.
+Linker는 AI 지식 그래프 기반 학습 결손 추적 솔루션입니다. 학생의 오답을 분석해 지식 그래프의 근본 원인 노드를 찾아주고, 맞춤형 마이크로 러닝을 제공합니다.
 
-**핵심 차별점**: Multi-Agent Harness (Proposer → Verifier → Content Generator) 협업 루프로 단일 AI 호출보다 정확한 진단.
+핵심 차별점: Multi-Agent Harness (Proposer → Verifier → Content Generator) 협업 루프로 단일 AI 호출보다 정확한 진단.
 
 ---
 
 ## 기술 스택
 
-- **프레임워크**: Next.js 16.2 (App Router, Turbopack)
-- **언어**: TypeScript 5.7 (strict)
-- **런타임**: React 19 + `@anthropic-ai/sdk` 0.87
-- **스타일**: Tailwind CSS 4 + shadcn/ui
-- **그래프**: ReactFlow 11
-- **저장**: localStorage (해커톤 MVP)
-- **배포**: Vercel (Node.js serverless, SSE 지원)
+- 프레임워크: Next.js 16.2 (App Router, Turbopack)
+- 언어: TypeScript 5.7 (strict)
+- 런타임: React 19 + `@anthropic-ai/sdk` 0.87
+- 스타일: Tailwind CSS 4 + shadcn/ui
+- 그래프: ReactFlow 11
+- 저장: localStorage (해커톤 MVP)
+- 배포: Vercel (Node.js serverless, SSE 지원)
 
 ## AI 모델
 
-- **Haiku 4.5** (`claude-haiku-4-5-20251001`): Proposer / Verifier / Content Gen / Chat / Context Validate
-- **Sonnet 4.6** (`claude-sonnet-4-6`): Graph Generation (복잡 구조 추론)
+- Haiku 4.5 (`claude-haiku-4-5-20251001`): Proposer / Verifier / Content Gen / Chat / Context Validate
+- Sonnet 4.6 (`claude-sonnet-4-6`): Graph Generation (복잡 구조 추론)
 
 ## 파일 구조
 
@@ -69,11 +69,11 @@ docs/
 type NodeType = "standard" | "mastered" | "missing"
 ```
 
-- **standard (학습 필요)**: 기본 상태 — 회색
-- **mastered (완료)**: `masteredNodeIds`에 포함 — 파란색 (`bg-blue-500`)
-- **missing (결손)**: `activeRootCause`와 같은 ID — 빨간색 + pulse
+- standard (학습 필요): 기본 상태 — 회색
+- mastered (완료): `masteredNodeIds`에 포함 — 파란색 (`bg-blue-500`)
+- missing (결손): `activeRootCause`와 같은 ID — 빨간색 + pulse
 
-**상태 전환 로직**:
+상태 전환 로직:
 - `missing` → 퀴즈 통과 후 학습완료 클릭 → `standard` (activeRootCause만 클리어)
 - `standard` → 학습완료 클릭 → `mastered`
 - `mastered` → 학습완료 클릭 → `standard` (토글 해제)
@@ -190,7 +190,7 @@ const MAX_ANALYSES = 5
 ✅ 직접 hex 사용
 
 ### 2. Edge hover 영역
-엣지 클릭 감지를 위해 **투명한 wide path** 추가:
+엣지 클릭 감지를 위해 투명한 wide path 추가:
 ```tsx
 <path d={edgePath} fill="none" stroke="transparent" strokeWidth={20} />
 <path d={edgePath} fill="none" stroke={actualColor} strokeWidth={2} />
@@ -233,12 +233,12 @@ pnpm build           # 타입 체크 + Turbopack 빌드
 pnpm dev             # 개발 서버
 ```
 
-**배포 (Vercel)**:
+배포 (Vercel):
 1. `vercel login` → `vercel`
 2. `vercel env add ANTHROPIC_API_KEY` (Production/Preview/Development)
 3. `vercel --prod`
 
-**환경 변수**: `ANTHROPIC_API_KEY` 필수. Anthropic SDK가 자동으로 `process.env`에서 읽음.
+환경 변수: `ANTHROPIC_API_KEY` 필수. Anthropic SDK가 자동으로 `process.env`에서 읽음.
 
 ---
 
