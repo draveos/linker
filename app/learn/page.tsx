@@ -345,6 +345,7 @@ export default function LearnPage() {
   return (
     <div className={cn(
       "flex h-screen w-screen bg-background overflow-hidden transition-opacity duration-300",
+      "animate-in fade-in duration-500",
       fading ? "opacity-0" : "opacity-100"
     )}>
       <LeftSidebar

@@ -19,14 +19,15 @@ export default function LoginPage() {
     setError("")
     if (!email || !password) { setError("이메일과 비밀번호를 입력하세요."); return }
     setLoading(true)
-    // 실제 인증 없이 데모용 → 바로 홈으로
     await new Promise((r) => setTimeout(r, 800))
     setLoading(false)
-    router.push("/home")
+    // 첫 로그인이면 온보딩으로, 아니면 홈으로
+    const onboarded = typeof window !== "undefined" && localStorage.getItem("linker_onboarded") === "true"
+    router.push(onboarded ? "/home" : "/onboarding")
   }
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex animate-in fade-in duration-500">
       {/* Left panel — branding */}
       <div className="hidden lg:flex flex-col w-1/2 bg-gradient-to-br from-primary to-primary/70 p-12 text-primary-foreground justify-between">
         <div className="flex items-center gap-2.5">
@@ -69,7 +70,7 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <h1 className="text-2xl font-bold text-foreground mb-1">다시 오셨군요!</h1>
+          <h1 className="text-2xl font-bold text-foreground mb-1">어서오세요!</h1>
           <p className="text-muted-foreground text-sm mb-8">계정에 로그인하세요</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

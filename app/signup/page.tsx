@@ -35,7 +35,7 @@ export default function SignupPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex animate-in fade-in duration-500">
       {/* Left panel */}
       <div className="hidden lg:flex flex-col w-1/2 bg-gradient-to-br from-primary to-primary/70 p-12 text-primary-foreground justify-between">
         <div className="flex items-center gap-2.5">

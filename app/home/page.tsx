@@ -438,6 +438,7 @@ export default function HomePage() {
     <div
       className={cn(
         "min-h-screen bg-background text-foreground relative transition-opacity duration-300",
+        "animate-in fade-in duration-500",
         fading ? "opacity-0" : "opacity-100"
       )}
     >
@@ -448,7 +449,7 @@ export default function HomePage() {
       </div>
 
       {/* ── Top nav ── */}
-      <header className="relative z-10 border-b border-border/70 bg-background/80 backdrop-blur-xl sticky top-0">
+      <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2.5">
@@ -491,7 +492,7 @@ export default function HomePage() {
         <div>
           <p className="text-[11px] font-semibold text-primary uppercase tracking-[0.2em] mb-3">WORKSPACE</p>
           <h1 className="text-5xl font-black text-foreground tracking-tight leading-tight">
-            다시 오셨네요
+            반갑습니다!
           </h1>
           <p className="text-muted-foreground mt-3 text-base">
             {continueGraph
