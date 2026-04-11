@@ -151,10 +151,24 @@ const subjects: Array<{
 ]
 
 // ── Demo areas ──
-const demoAreas = [
-  { title: "지식 그래프 대시보드", badge: "Interactive" },
-  { title: "오답 분석 상세 보고서", badge: "AI-Powered" },
-  { title: "개인화 학습 경로", badge: "Adaptive" },
+const demoAreas: Array<{
+  title: string
+  subtitle: string
+  badge: string
+  videoSrc: string
+}> = [
+  {
+    title: "오답 분석 리포트",
+    subtitle: "멀티 에이전트가 오답의 근본 원인을 추적합니다",
+    badge: "AI-Powered",
+    videoSrc: "/analysis_report_demo.mp4",
+  },
+  {
+    title: "AI 그래프 생성",
+    subtitle: "강의 텍스트 한 줄로 지식 그래프를 자동 생성",
+    badge: "Automated",
+    videoSrc: "/graph_generation_demo.mp4",
+  },
 ]
 
 // ── Harness agent configs ──
@@ -989,16 +1003,16 @@ export default function LandingPage() {
                   heroLoaded ? "opacity-100" : "opacity-0"
               )}
           >
-            {/* Video placeholder - replace with actual video */}
+            {/* Hero background video */}
             <video
                 autoPlay
                 loop
                 muted
                 playsInline
+                preload="metadata"
                 className="absolute inset-0 w-full h-full object-cover"
-                poster=""
             >
-              {/* <source src="/videos/hero.mp4" type="video/mp4" /> */}
+              <source src="/hero_thumbnale.mp4" type="video/mp4" />
             </video>
 
             {/* Gradient overlay for video placeholder */}
@@ -1122,30 +1136,53 @@ export default function LandingPage() {
                 </p>
               </div>
 
-              {/* Demo carousel */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+              {/* Demo cards — 2-column cinematic */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8 max-w-5xl mx-auto">
                 {demoAreas.map((demo, i) => (
                     <div
                         key={demo.title}
                         className={cn(
-                            "group relative rounded-2xl overflow-hidden bg-muted border border-border hover:border-primary/50 transition-all cursor-pointer h-64",
+                            "group relative rounded-2xl overflow-hidden border border-border hover:border-primary/50 transition-all duration-500 cursor-pointer aspect-video bg-muted",
                             demoRef.visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
                         )}
-                        style={{ transitionDelay: `${i * 100}ms` }}
+                        style={{ transitionDelay: `${i * 120}ms` }}
                     >
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <div className="p-6 h-full flex flex-col justify-between relative z-10">
-                        <div>
-                      <span className="text-xs font-semibold text-primary/80 bg-primary/10 px-3 py-1 rounded-full">
-                        {demo.badge}
-                      </span>
-                        </div>
-                        <h3 className="text-xl font-bold group-hover:text-primary transition-colors">
-                          {demo.title}
-                        </h3>
-                        <div className="flex items-center gap-2 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                          <span>탐색</span>
-                          <ChevronRight className="h-4 w-4" />
+                      {/* Video background */}
+                      <video
+                          src={demo.videoSrc}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+
+                      {/* Dark gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-black/5" />
+
+                      {/* Primary hover overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-primary/25 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+                      {/* Content */}
+                      <div className="relative z-10 h-full flex flex-col justify-between p-6">
+                        {/* Badge top */}
+                        <span className="inline-flex items-center self-start text-[10px] font-semibold text-white bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/20 uppercase tracking-wider">
+                          {demo.badge}
+                        </span>
+
+                        {/* Text bottom */}
+                        <div className="space-y-1.5">
+                          <h3 className="text-2xl font-bold text-white leading-tight group-hover:text-primary transition-colors">
+                            {demo.title}
+                          </h3>
+                          <p className="text-sm text-white/75 leading-snug max-w-sm">
+                            {demo.subtitle}
+                          </p>
+                          <div className="flex items-center gap-1 text-primary text-xs font-medium pt-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                            <span>자세히 보기</span>
+                            <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                          </div>
                         </div>
                       </div>
                     </div>
