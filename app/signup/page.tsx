@@ -3,8 +3,9 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { BrainCircuit, Eye, EyeOff, ArrowRight, Check, ArrowLeft } from "lucide-react"
+import { BrainCircuit, Eye, EyeOff, ArrowRight, Check, ArrowLeft, User, GraduationCap } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { setUserRole, type UserRole } from "@/lib/graph-store"
 
 export default function SignupPage() {
   const router = useRouter()
@@ -15,6 +16,7 @@ export default function SignupPage() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [role, setRole] = useState<UserRole>("student")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,6 +27,8 @@ export default function SignupPage() {
     setLoading(true)
     await new Promise((r) => setTimeout(r, 900))
     setLoading(false)
+    // 선택한 역할을 저장 → 로그인 페이지에서 auto-select
+    setUserRole(role)
     router.push("/login")
   }
 
@@ -85,7 +89,40 @@ export default function SignupPage() {
           </div>
 
           <h1 className="text-2xl font-bold text-foreground mb-1">계정 만들기</h1>
-          <p className="text-muted-foreground text-sm mb-8">무료로 시작하세요</p>
+          <p className="text-muted-foreground text-sm mb-6">무료로 시작하세요</p>
+
+          {/* Role toggle */}
+          <div className="mb-5">
+            <label className="text-xs font-medium text-foreground block mb-2">역할 선택</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole("student")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm rounded-xl border-2 transition-all",
+                  role === "student"
+                    ? "border-primary bg-primary/10 text-primary font-semibold shadow-sm shadow-primary/10"
+                    : "border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/50"
+                )}
+              >
+                <User className="h-4 w-4" />
+                학생
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("teacher")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm rounded-xl border-2 transition-all",
+                  role === "teacher"
+                    ? "border-primary bg-primary/10 text-primary font-semibold shadow-sm shadow-primary/10"
+                    : "border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/50"
+                )}
+              >
+                <GraduationCap className="h-4 w-4" />
+                교수
+              </button>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

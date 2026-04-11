@@ -25,6 +25,7 @@ interface LeftSidebarProps {
   recentAnalyses: Analysis[]
   onSelectAnalysis: (analysis: Analysis) => void
   onDeleteAnalysis: (id: string) => void
+  graphId: string
   graphDomain: string
   onGoHome?: () => void
   /** 튜토리얼 그래프일 때만 데모 예시 + 리셋 버튼 표시 */
@@ -43,6 +44,7 @@ export function LeftSidebar({
   recentAnalyses,
   onSelectAnalysis,
   onDeleteAnalysis,
+  graphId,
   graphDomain,
   onGoHome,
   showPresets,
@@ -55,13 +57,13 @@ export function LeftSidebar({
   const [resetConfirm, setResetConfirm] = useState(false)
 
   useEffect(() => {
-    setErrorLogs(getErrorLogs())
-  }, [])
+    setErrorLogs(getErrorLogs(graphId))
+  }, [graphId])
 
   // 패널 열릴 때마다 최신 로그 로드 (학습 페이지에서 분석 결과가 업데이트된 후 반영)
   useEffect(() => {
-    if (showLogs) setErrorLogs(getErrorLogs())
-  }, [showLogs])
+    if (showLogs) setErrorLogs(getErrorLogs(graphId))
+  }, [showLogs, graphId])
 
   const formatTime = (date: Date | string) => {
     const d = typeof date === "string" ? new Date(date) : date
@@ -120,7 +122,7 @@ export function LeftSidebar({
 
   const handleDeleteLog = (id: string) => {
     deleteErrorLog(id)
-    setErrorLogs(getErrorLogs())
+    setErrorLogs(getErrorLogs(graphId))
   }
 
   return (

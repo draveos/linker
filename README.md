@@ -1,58 +1,94 @@
+<div align="center">
+
 # 🧠 Linker
 
-> **AI 지식 그래프 기반 학습 결손 추적 솔루션**
->
-> 학생의 오답을 분석해 지식 그래프의 **근본 원인 노드**를 찾아주고, 맞춤형 마이크로 러닝을 제공합니다.
+### AI 지식 그래프 기반 학습 결손 추적 솔루션
 
-**2026 KIT 바이브코딩 공모전 출품작** · 교육 AI 솔루션 부문
+오답을 보고 *"계산 실수"*로 넘기는 시대는 끝났습니다.
+Linker는 학생의 오답을 지식 그래프 위에서 역추적해 진짜 막힌 개념을 찾아주고, 3분 마이크로 러닝으로 즉시 메꿔줍니다.
 
----
+2026 KIT 바이브코딩 공모전 출품작 · 교육 AI 솔루션 부문
 
-## 🎯 해결하는 문제
-
-**"같은 실수를 반복하는데, 학생도 교사도 근본 원인을 모른다"**
-
-- 학생이 역행렬을 틀리면 "계산 실수"로 넘어가지만, 실제 원인은 **행렬식 개념 결손**인 경우가 대부분
-- 2주 뒤 고유값 문제에서 또 행렬식이 나오면 또 틀림 → **반복되는 오답**
-- ChatGPT는 질문마다 독립적이라 "이 학생이 어디서 막히는지" 기억하지 못함
-- 교사는 30명 학급의 1:1 진단 시간이 없음
-
-→ **Linker**는 지식 그래프 위에서 오답의 근본 원인을 역추적해, 표면 증상이 아닌 핵심 결손을 찾아줍니다.
+[데모 영상](#데모) · [핵심 기능](#핵심-기능) · [Multi-Agent Harness](#multi-agent-harness--동작-원리) · [기술 스택](#기술-스택) · [AI 리포트](docs/AI_REPORT.md)
 
 ---
 
-## ✨ 핵심 기능
+</div>
 
-### 1. 지식 그래프 시각화
-개념 간 의존 관계(DAG)를 ReactFlow로 렌더링. 완료/학습필요/결손을 색상으로 구분.
+## 해결하는 문제
 
-### 2. AI 오답 역추적
-오답 텍스트 입력 → AI가 그래프를 역방향 순회 → 근본 원인 노드 특정 + traversal path 애니메이션.
+> "같은 실수를 반복하는데, 학생도 교사도 근본 원인을 모른다"
 
-### 3. **Multi-Agent Harness** 🔥
-3개 Claude Haiku 에이전트의 협업 루프:
+학생이 역행렬을 틀리면 *"계산 실수네"*로 넘어갑니다. 2주 뒤 고유값 문제에서 또 행렬식이 나오면 또 틀립니다. 진짜 원인은 행렬식의 부호 규칙 결손 — 표면 증상이 아닌 근본 원인입니다.
+
+| 페인 포인트 | 기존 해결책의 한계 |
+|---|---|
+| 같은 실수의 무한 반복 | "계산 실수"로 진단이 끝남 |
+| 개념 의존성을 머릿속에 못 그림 | 정적 커리큘럼 트리만 제공 |
+| ChatGPT는 누적 약점을 기억 못 함 | 질문마다 독립 세션 |
+| 교사 1:1 진단 시간 부족 | 30명 × 5분 = 한 학급에 2.5시간 |
+
+→ Linker는 그래프 역추적 + Multi-Agent 검증으로 진짜 결손 노드를 찾고, 퀴즈 게이트로 이해를 검증한 뒤에만 마스터 처리합니다.
+
+---
+
+## 데모
+
+`public/` 디렉터리에 실제 동작 영상이 포함되어 있습니다.
+
+| 영상 | 보여주는 것 |
+|---|---|
+| [`hero_thumbnale.mp4`](public/hero_thumbnale.mp4) | 랜딩 페이지 히어로 데모 |
+| [`graph_generation_demo.mp4`](public/graph_generation_demo.mp4) | 강의 텍스트 → Sonnet으로 그래프 자동 생성 |
+| [`analysis_report_demo.mp4`](public/analysis_report_demo.mp4) | 오답 입력 → Multi-Agent 분석 → 근본 원인 + 마이크로 러닝 |
+
+라이브 시연은 `pnpm dev` 실행 후 `http://localhost:3000`에서 가능합니다.
+
+---
+
+## 핵심 기능
+
+### 1. 학생/교수 듀얼 워크스페이스
+로그인 시 학생 또는 교수 역할을 선택. 같은 인프라 위에서 두 페르소나가 서로 다른 도구를 사용합니다.
+
+- 학생 → `/home` 그래프 캔버스 + `/learn` 진단·학습 모드
+- 교수 → `/teacher` 학급 대시보드 + `/teacher/class/[id]` 학급 약점 분포 + AI 개입 추천
+
+### 2. 동적 지식 그래프 (DAG 시각화)
+ReactFlow 11 위에서 개념 간 의존 관계를 실시간 렌더링.
+
+- 3가지 노드 상태: `mastered` (파란), `standard` (회색), `missing` (빨강 + pulse)
+- 노드 추가/삭제/이름변경/드래그 + AI 자동 정리 모드
+- 도메인별 컬러/아이콘 테마 (선형대수, 미적분, 알고리즘, 분자생물학 등)
+
+### 3. Multi-Agent Harness — 핵심 차별화
+3개 Claude Haiku 4.5 에이전트의 협업 루프로 단일 호출보다 정확한 진단:
 
 ```
-Proposer (제안) → Verifier (검증) → Content Generator (콘텐츠)
-     ↑_____________↓
-   확신도 낮으면 재추론
+Proposer (제안)  →  Verifier (검증)  →  Content Generator (콘텐츠)
+        ↑________________↓
+   confidence < 0.8이면 critique 반영해 재추론 (최대 3 라운드)
 ```
 
-- **조기 종료 4가지**: 확신도/검증자 동의/수렴/max rounds
-- **Two-phase optimization**: 루프 중엔 진단만, 콘텐츠는 최종 1회만 → ~54% 토큰 절감
+- 조기 종료 4가지: `confidence_high` / `verifier_agreed` / `converged` / `max_rounds`
+- Two-phase optimization: 루프 중엔 진단만, 콘텐츠는 최종 1회 → ~54% 토큰 절감
+- SSE 실시간 스트리밍: 사용자가 "AI가 지금 뭘 하는지" 인지 가능 (블랙박스 방지)
 
-### 4. 퀴즈 게이트
-결손 노드는 **확인 퀴즈 정답 후에만** "학습 완료" 버튼 활성화 → 이해 검증 없이 넘어가는 것 방지.
+### 4. 퀴즈 게이트 — 이해 검증 없이 못 넘어감
+결손 노드는 확인 퀴즈 정답 후에만 "학습 완료" 버튼이 활성화됩니다. *"대충 알겠다"*로 넘어가는 메타인지 함정을 차단합니다.
 
 ### 5. 강의 텍스트 → 그래프 자동 생성
-Claude Sonnet으로 강의 노트를 지식 그래프 JSON으로 변환. 입력 부족 시 Haiku가 추가 질문으로 컨텍스트 보강.
+Claude Sonnet 4.6이 강의 노트를 DAG JSON으로 변환. 입력이 100자 미만이면 Haiku가 추가 질문(최대 3회)으로 컨텍스트를 보강한 뒤 Sonnet 1회 호출로 품질 확보.
 
 ### 6. 학습 프로파일 누적
-모든 분석 결과가 저장되어 개인 약점 패턴이 형성됨.
+모든 오답·분석·trace가 그래프별로 격리된 로그에 저장됩니다 (그래프 A의 오답이 그래프 B에 섞이지 않음). 시간이 지나면 *"내가 행렬식에서 3번 막혔구나"* 같은 개인 약점 패턴이 형성됩니다.
+
+### 7. 5단계 온보딩 슬라이드쇼
+첫 로그인 시 인터랙티브 애니메이션으로 핵심 가치 전달. 가상 마우스 커서가 캔버스에서 노드를 추가·연결하는 *"flawless"* 데모, 멀티 에이전트 4-phase 시뮬레이션, 퀴즈 idle→오답→정답 사이클 등.
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 로컬 실행
 
@@ -60,7 +96,7 @@ Claude Sonnet으로 강의 노트를 지식 그래프 JSON으로 변환. 입력 
 # 1. 의존성 설치
 pnpm install
 
-# 2. 환경 변수 설정
+# 2. 환경 변수
 cp .env.example .env.local  # 없으면 직접 생성
 # .env.local 내용:
 # ANTHROPIC_API_KEY=sk-ant-...
@@ -69,151 +105,271 @@ cp .env.example .env.local  # 없으면 직접 생성
 pnpm dev
 ```
 
-[http://localhost:3000](http://localhost:3000) 접속
+→ [http://localhost:3000](http://localhost:3000)
 
-### 배포 (Vercel)
+### 프로덕션 배포 (Vercel)
 
 ```bash
 vercel login
 vercel
-vercel env add ANTHROPIC_API_KEY    # Production/Preview/Development 모두
+vercel env add ANTHROPIC_API_KEY    # Production / Preview / Development 모두
 vercel --prod
 ```
 
+> Vercel 설정 주의: `analyze-error` API 라우트는 `maxDuration = 60`을 사용합니다 (멀티 에이전트 루프가 기본 10초를 넘을 수 있음).
+
 ---
 
-## 🏗️ 기술 스택
+## 기술 스택
 
 | 레이어 | 기술 |
 |---|---|
-| Frontend | Next.js 16.2 (App Router) + React 19 + TypeScript |
-| 스타일 | Tailwind CSS 4 + shadcn/ui |
+| Frontend | Next.js 16.2 (App Router · Turbopack) · React 19 · TypeScript 5.7 |
+| 스타일 | Tailwind CSS 4 + shadcn/ui (Radix UI 기반) |
 | 그래프 | ReactFlow 11 |
 | AI SDK | @anthropic-ai/sdk 0.87 |
-| AI 모델 | Claude Haiku 4.5 + Sonnet 4.6 |
-| 저장소 | localStorage (MVP) |
-| 배포 | Vercel (Node.js serverless, SSE 지원) |
-| 개발 파트너 | Claude Code (Opus 4.6, 1M context) |
+| AI 모델 | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) + Sonnet 4.6 (`claude-sonnet-4-6`) |
+| 저장소 | localStorage (해커톤 MVP) → v2 Supabase 계획 |
+| 스트리밍 | Server-Sent Events (Vercel Node.js Serverless 지원) |
+| 개발 파트너 | Claude Code (Opus 4.6 · 1M context) + v0.app (초기 UI 프로토타입) |
 
 ---
 
-## 📁 프로젝트 구조
+## 프로젝트 구조
 
 ```
 app/
-├── api/                   # AI API routes
-│   ├── analyze-error/     # Multi-Agent SSE 핵심
-│   ├── generate-graph/    # Sonnet 그래프 생성
-│   ├── chat/              # 챗봇 스트리밍
-│   └── validate-context/  # 컨텍스트 Q&A
-├── page.tsx               # 랜딩 (애니메이션 데모 목업)
-├── home/                  # 그래프 카드 그리드
-└── learn/                 # 학습 페이지 (메인)
+├── api/
+│   ├── analyze-error/      # Multi-Agent Harness SSE (핵심)
+│   ├── generate-graph/     # Sonnet 그래프 생성
+│   ├── chat/               # Haiku 챗봇 스트리밍
+│   └── validate-context/   # 컨텍스트 보강 Q&A
+├── page.tsx                # 랜딩 (3D 캐러셀 + 데모 영상)
+├── login/  signup/         # 인증 + 역할 선택 (학생/교수)
+├── onboarding/             # 5단계 인터랙티브 슬라이드쇼
+├── home/                   # 학생 — 그래프 카드 그리드
+├── learn/                  # 학생 — 학습 페이지 (메인)
+└── teacher/
+    ├── page.tsx            # 교수 — 학급 대시보드
+    └── class/[id]/         # 교수 — 학급 상세 (약점 분포 + AI 개입)
 
 components/
-├── knowledge-graph-canvas.tsx   # ReactFlow 래퍼
-├── left-sidebar.tsx             # 오답 입력 + 로그
-├── remedy-panel.tsx             # 분석 결과 + agentTrace
-└── chatbot.tsx                  # 떠있는 챗봇
+├── knowledge-graph-canvas.tsx   # ReactFlow 래퍼 (700+ 줄)
+├── left-sidebar.tsx             # 오답 입력 + 분석 기록
+├── remedy-panel.tsx             # 분석 결과 + agentTrace 패널
+├── chatbot.tsx                  # 떠있는 챗봇
+└── ui/                          # shadcn 컴포넌트
 
 lib/
-├── graph-store.ts         # localStorage CRUD
+├── graph-store.ts          # localStorage CRUD (그래프별 스코핑)
+├── mock-classes.ts         # 교수 대시보드 데모 데이터
+├── validation.ts           # 입력 검증 + prompt injection 방어
+├── rate-limit.ts           # IP 기반 rate limit
 └── constants.ts
 
-docs/                      # 공모전 제출 문서
-├── AI_REPORT.md           # 양식 기반 리포트
-├── architecture.md        # 시스템 구조
-├── agents-design.md       # Harness 상세
-├── prompt-engineering.md  # 프롬프트 전략
-└── ai-collaboration.md    # 개발 과정 기록
+docs/
+├── AI_REPORT.md            # 공모전 제출 리포트 (양식 기반)
+├── architecture.md         # 시스템 구조
+├── agents-design.md        # Harness 에이전트 상세
+├── prompt-engineering.md   # 프롬프트 전략
+└── ai-collaboration.md     # 개발 과정 기록
 
-CLAUDE.md                  # Claude Code 개발 가이드
+CLAUDE.md                   # Claude Code 개발 지침
 ```
 
 ---
 
-## 📚 문서
+## Multi-Agent Harness — 동작 원리
 
-- **[AI 빌딩 리포트](docs/AI_REPORT.md)** — 공모전 제출용 상세 리포트
-- **[시스템 아키텍처](docs/architecture.md)** — 전체 구조 다이어그램
-- **[Multi-Agent 설계](docs/agents-design.md)** — Harness 루프 상세
-- **[프롬프트 엔지니어링](docs/prompt-engineering.md)** — 토큰 최적화 전략
-- **[AI 협업 기록](docs/ai-collaboration.md)** — Claude Code와의 개발 과정
-- **[CLAUDE.md](CLAUDE.md)** — 프로젝트 컨벤션 & 개발 가이드
+### 에이전트 분업
+
+| Agent | 모델 | 역할 | max_tokens |
+|---|---|---|---|
+| Proposer | Haiku 4.5 | 그래프 역추적으로 근본 원인 후보 제안 | 200 |
+| Verifier | Haiku 4.5 | 비판적 검토 — 더 근본적 prereq가 없는지 검증 | 200 |
+| Content Gen | Haiku 4.5 | 확정된 결손 개념의 마이크로 러닝 + 퀴즈 생성 | 800 |
+
+### 루프 다이어그램
+
+```
+[Step 1] 오류 패턴 분석
+    ↓
+[Step 2] Proposer R1  ──→  confidence ≥ 0.8 ? ──YES──→ Step 5
+    ↓ NO
+[Step 3] Verifier R1  ──→  agree ?           ──YES──→ Step 5
+    ↓ NO
+[Step 4] Proposer R2 (+ critique)
+    ↓
+   ... (최대 3 라운드)
+    ↓
+[Step 5] Content Generator (1회만 호출)
+    ↓
+   최종 결과
+```
+
+### 조기 종료 4가지 (토큰 낭비 차단)
+
+| ExitReason | 조건 |
+|---|---|
+| `confidence_high` | Proposer confidence ≥ 0.8 → 즉시 종료 |
+| `verifier_agreed` | Verifier가 동의 → 종료 |
+| `converged` | 같은 노드 2회 연속 제안 → 수렴 인지 |
+| `max_rounds` | 3 라운드 도달 → 강제 종료 |
+
+### 서버 디버그 로그 (실제 출력)
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Harness] 오답 분석 시작
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Proposer R1]  노드: 행렬식 (ID: 4)  · conf 0.72
+   추론: 학생이 ad-bc 공식의 부호 순서를...
+[!] confidence < 0.8 → Verifier 호출
+[Verifier]     동의: NO
+   반박: 실제로는 행렬 곱셈 순서가 더 근본적...
+[*] Proposer 재호출 (critique 반영)
+[Proposer R2]  노드: 행렬 곱셈 (ID: 3)  · conf 0.91
+[최종] 행렬 곱셈 (라운드: 2 · trace 3개 · exit: confidence_high)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 ---
 
-## 🎓 데모 시나리오
+## 토큰 효율 — 측정된 최적화
 
-튜토리얼 그래프에 3가지 데모 프리셋 제공:
+### ① 모델 계층화
+
+| 모델 | 용도 | 호출 빈도 | 토큰/호출 |
+|---|---|---|---|
+| Haiku 4.5 | 분석 · 검증 · 콘텐츠 · 챗봇 · 컨텍스트 | 많음 (~15) | 200–800 |
+| Sonnet 4.6 | 그래프 생성 (구조적 추론) | 적음 (1) | 2000–4000 |
+
+→ 모든 작업을 Sonnet으로 돌리는 경우 대비 ~70% 토큰 비용 절감 (추정)
+
+### ② Two-phase Proposer (핵심 최적화)
+
+```
+Before:  Proposer가 매 루프마다 explanation + microLearning + quiz까지 생성
+         3 × 800tok = 2,400 tok
+
+After :  루프 중엔 진단만 (100tok) · Content Gen은 최종 1회만 (800tok)
+         3 × 100 + 800 = 1,100 tok    ← ~54% 절감
+```
+
+### ③ 압축 프롬프트 포맷
+
+```diff
+- {"id":"4","label":"행렬식","description":"ad-bc 계산","prerequisites":["3"]}
++ 4|행렬식|ad-bc 계산|prereqs:3
+```
+
+→ 노드 리스트 직렬화에서 ~40% 토큰 절감.
+
+### ④ 조기 종료 + max_tokens 엄격 제한
+
+평균 1.5 라운드에서 종료 → 최악(3 라운드) 대비 추가 ~50% 토큰 절감.
+
+---
+
+## 성과 지표 (자가 측정)
+
+| 지표 | 값 |
+|---|---|
+| 평균 루프 라운드 | 1.5 |
+| 평균 토큰 / 분석 | ~1,100 |
+| SSE 이벤트 지연 | 80–150ms |
+| 그래프 생성 성공률 | ~95% (Sonnet 1회 호출 기준) |
+| 멀티 에이전트 루프 max duration | 60s (Vercel serverless) |
+
+---
+
+## 기존 솔루션 대비
+
+| 기능 | ChatGPT/Gemini | 기존 LMS | Linker |
+|---|:-:|:-:|:-:|
+| 학습 구조 시각화 | X | △ 정적 트리 | O 동적 DAG |
+| 근본 원인 추적 | X 질문별 독립 | X | O 그래프 역추적 + Verifier |
+| 학습 이력 누적 | X | △ 점수만 | O 개념별 약점 프로파일 |
+| 자동 마이크로 러닝 | △ 수동 요청 | X | O 결손 노드에 자동 생성 |
+| 이해 검증 게이트 | X | △ 일괄 채점 | O 퀴즈 통과 필수 |
+| 멀티 에이전트 품질 보장 | X | X | O Proposer-Verifier 루프 |
+| 교수 1:N 진단 도구 | X | △ 성적표 | O 학급 약점 분포 + AI 개입 추천 |
+
+---
+
+## 데모 시나리오
+
+튜토리얼 그래프에 3가지 데모 프리셋이 포함되어 있어 Harness 동작을 즉시 검증할 수 있습니다:
 
 | 프리셋 | 기대 동작 | 검증 루프 |
 |---|---|---|
-| 🟢 **명확한 오답** | 1라운드 즉시 종료 | Verifier 미발동 |
-| 🟡 **모호한 오답** | 2라운드 | Verifier 발동 → 동의 |
-| 🔴 **복잡한 오답** | 2-3라운드 | Verifier 반박 → 재추론 |
+| 명확한 오답 | 1라운드 즉시 종료 | Verifier 미발동 (confidence_high) |
+| 모호한 오답 | 2라운드 | Verifier 발동 → 동의 |
+| 복잡한 오답 | 2–3라운드 | Verifier 반박 → 재추론 → converged |
 
 ---
 
-## 🧪 AI 활용 하이라이트
+## 보안 & 안정성
 
-### 모델 계층화 (비용 최적화)
-- **Haiku 4.5**: 고빈도 분류/추출 (분석, 검증, 콘텐츠, 챗, Context)
-- **Sonnet 4.6**: 저빈도 복잡 추론 (그래프 생성)
-- **~70% 토큰 비용 절감** (모두 Sonnet으로 돌리는 경우 대비)
-
-### 압축 프롬프트 포맷
-```
-# Before (JSON)
-{"id":"4","label":"행렬식","description":"...","prerequisites":["3"]}
-# After (pipe)
-4|행렬식|ad-bc 계산|prereqs:3
-```
-→ **~40% 토큰 절감**
-
-### Two-phase Proposer
-- 루프 중엔 **진단만** (100 tokens)
-- 최종 확정 후 Content Generator **1회만** (800 tokens)
-- 3라운드 시: 2400 → 1100 tokens (**~54% 절감**)
-
-### 서버 사이드 로그
-```
-🧠 [Harness] 오답 분석 시작
-🔵 [Proposer R1] 행렬식 (conf: 0.72)
-⚠️  확신도 < 0.8 → Verifier 호출
-🟠 [Verifier] NO — 더 근본적 원인: 행렬 곱셈
-🔄 Proposer R2 (critique 반영)
-🔵 [Proposer R2] 행렬 곱셈 (conf: 0.91)
-✅ [최종] 라운드: 2, 종료: verifier_agreed
-```
+- Prompt Injection 방어 — `lib/validation.ts`에서 입력 sanitize + delimiter wrapping
+- IP 기반 Rate Limit — `lib/rate-limit.ts`로 분당 호출 제한
+- 그래프별 데이터 격리 — 오답·분석·진행도가 graphId로 스코핑되어 교차 유출 차단
+- 빈 그래프 / 에러 처리 — API 호출 전 pre-check + 사용자 친화적 토스트 메시지
+- 타입 안전 SSE — `AgentTraceEntry` 유니온 타입을 API route에서 export → 프론트가 `import type`으로 재사용
 
 ---
 
-## 📊 성과 지표 (자가 측정)
+## 로드맵
 
-- **평균 루프 라운드**: 1.5
-- **평균 토큰/분석**: ~1,100
-- **SSE 지연**: ~80-150ms/이벤트
-- **그래프 생성 성공률**: ~95% (Sonnet 1회 호출)
+### v1 (현재 — 해커톤 제출본)
+- [x] Multi-Agent Harness (Proposer · Verifier · Content Gen)
+- [x] 학생/교수 듀얼 워크스페이스
+- [x] 동적 지식 그래프 + 퀴즈 게이트
+- [x] 강의 텍스트 → 그래프 자동 생성
+- [x] 5단계 인터랙티브 온보딩
+- [x] 그래프별 학습 프로파일 누적
+- [x] 교수 학급 대시보드 + 약점 분포 + AI 개입 추천 (데모 모드)
 
----
-
-## 🛣️ 로드맵 (v2+)
-
-- 교사 대시보드 (학급 단위 약점 집계)
-- Supabase 백엔드 이관 (multi-device 동기화)
-- Prompt caching으로 추가 토큰 절감
-- Content Critic 에이전트 (마이크로 러닝 품질 검증)
-- Prerequisite Miner (학습 패턴에서 새 prereq 자동 발견)
-
----
-
-## 📝 라이선스
-
-Educational use. 공모전 출품작.
+### v2
+- [ ] 교수가 만든 템플릿 그래프 학급 배포 + 학생 개별 진행도 조회
+- [ ] 학급 약점 분포 실시간 업데이트 + 단체 팝업 개입
+- [ ] Supabase 백엔드 (multi-device 동기화 · 실제 학생 데이터)
+- [ ] Prompt Caching으로 추가 토큰 절감
+- [ ] Content Critic 에이전트 (마이크로 러닝 품질 검증)
+- [ ] Prerequisite Miner (학습 패턴에서 새 prereq 자동 발견)
 
 ---
 
-## 🤝 Built With
+## 더 읽기
 
-이 프로젝트는 **Claude Code (Opus 4.6)와의 지속적인 협업**으로 개발되었습니다. 인간은 비전과 판단을, AI는 구현과 검증을 담당하는 협업 모델의 결과물입니다. 개발 과정 기록은 [docs/ai-collaboration.md](docs/ai-collaboration.md) 참조.
+- [AI 빌딩 리포트](docs/AI_REPORT.md) — 공모전 제출용 상세 리포트
+- [시스템 아키텍처](docs/architecture.md) — 전체 구조 다이어그램
+- [Multi-Agent 설계](docs/agents-design.md) — Harness 루프 상세
+- [프롬프트 엔지니어링](docs/prompt-engineering.md) — 토큰 최적화 전략
+- [AI 협업 기록](docs/ai-collaboration.md) — Claude Code와의 개발 과정
+- [CLAUDE.md](CLAUDE.md) — 프로젝트 컨벤션 & 개발 가이드
+
+---
+
+## Built With Claude Code
+
+이 프로젝트는 Claude Code (Opus 4.6 · 1M context)와의 지속적인 페어 프로그래밍으로 개발되었습니다.
+
+> 인간은 비전·판단·UX 결정을 담당하고, AI는 구현·타입 체크·트레이드오프 분석을 담당합니다. 단순 코드 생성기가 아닌 추론하는 페어로 활용한 것이 핵심이며, 전체 코드의 약 80%가 Claude Code로부터 생성/수정되었습니다.
+
+세션별 의사결정과 트레이드오프 논의는 [docs/ai-collaboration.md](docs/ai-collaboration.md)에 정리되어 있습니다.
+
+---
+
+## 라이선스
+
+Educational use. 2026 KIT 바이브코딩 공모전 출품작.
+
+---
+
+<div align="center">
+
+같은 실수를 반복하지 않는 학습.
+*Linker가 그 차이를 만듭니다.*
+
+</div>

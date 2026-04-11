@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   BrainCircuit, ArrowRight, ArrowLeft, X, Check, Bot, Shield, BookOpen,
-  AlertTriangle, Sparkles, Zap,
+  AlertTriangle, Sparkles, Zap, MousePointer2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -49,90 +49,214 @@ function WelcomeVisual() {
   )
 }
 
-// ── Slide 2: Knowledge Graph ─────────────────────────────────────
+// ── Slide 2: Knowledge Graph — 마우스 커서로 노드 추가 + 연결 애니메이션 ─
+
+const GRAPH_NODES = [
+  { id: "1", label: "벡터",   x: 100, y: 60,  appearAt: 1400 },
+  { id: "2", label: "행렬",   x: 300, y: 60,  appearAt: 2400 },
+  { id: "3", label: "행렬식", x: 200, y: 190, appearAt: 5200 },
+]
+
+const GRAPH_EDGES = [
+  { fromId: "1", toId: "2", drawStart: 3200, drawEnd: 3800 },
+  { fromId: "1", toId: "3", drawStart: 6100, drawEnd: 6700 },
+]
+
+const CURSOR_KEYS = [
+  { t: 0,    x: 380, y: 240 },
+  { t: 300,  x: 380, y: 240 },
+  { t: 1100, x: 100, y: 60  },
+  { t: 1400, x: 100, y: 60  },  // click node 1
+  { t: 2100, x: 300, y: 60  },
+  { t: 2400, x: 300, y: 60  },  // click node 2
+  { t: 3000, x: 100, y: 60  },  // move back to n1
+  { t: 3200, x: 100, y: 60  },  // press down
+  { t: 3800, x: 300, y: 60  },  // drag to n2
+  { t: 4200, x: 300, y: 60  },  // release
+  { t: 4900, x: 200, y: 190 },
+  { t: 5200, x: 200, y: 190 },  // click node 3
+  { t: 5900, x: 100, y: 60  },
+  { t: 6100, x: 100, y: 60  },  // press down
+  { t: 6700, x: 200, y: 190 },  // drag to n3
+  { t: 7100, x: 200, y: 190 },  // release
+  { t: 8500, x: 380, y: 240 },  // exit
+  { t: 9500, x: 380, y: 240 },
+]
+
+const CLICK_TIMES = [1400, 2400, 5200]
+const GRAPH_TOTAL = 9500
+
+const easeInOut = (p: number) => 0.5 - 0.5 * Math.cos(p * Math.PI)
+
+function getCursorAt(time: number): { x: number; y: number } {
+  if (time <= CURSOR_KEYS[0].t) return { x: CURSOR_KEYS[0].x, y: CURSOR_KEYS[0].y }
+  const last = CURSOR_KEYS[CURSOR_KEYS.length - 1]
+  if (time >= last.t) return { x: last.x, y: last.y }
+  for (let i = 0; i < CURSOR_KEYS.length - 1; i++) {
+    const curr = CURSOR_KEYS[i]
+    const next = CURSOR_KEYS[i + 1]
+    if (time >= curr.t && time < next.t) {
+      const span = next.t - curr.t
+      if (span === 0) return { x: curr.x, y: curr.y }
+      const p = easeInOut((time - curr.t) / span)
+      return {
+        x: curr.x + (next.x - curr.x) * p,
+        y: curr.y + (next.y - curr.y) * p,
+      }
+    }
+  }
+  return { x: last.x, y: last.y }
+}
 
 function GraphVisual() {
-  const nodes = [
-    { id: "root", label: "벡터",       x: 200, y: 40,  delay: 0    },
-    { id: "m1",   label: "행렬",       x: 110, y: 130, delay: 200  },
-    { id: "m2",   label: "행렬 곱셈",  x: 290, y: 130, delay: 320  },
-    { id: "l1",   label: "행렬식",     x: 70,  y: 220, delay: 600  },
-    { id: "l2",   label: "선형 변환",  x: 200, y: 220, delay: 720  },
-    { id: "l3",   label: "고유값",     x: 330, y: 220, delay: 840  },
-  ]
-  const edges = [
-    { from: "root", to: "m1",  delay: 120 },
-    { from: "root", to: "m2",  delay: 240 },
-    { from: "m1",   to: "l1",  delay: 520 },
-    { from: "m1",   to: "l2",  delay: 620 },
-    { from: "m2",   to: "l2",  delay: 680 },
-    { from: "m2",   to: "l3",  delay: 780 },
-  ]
-  const pos = Object.fromEntries(nodes.map((n) => [n.id, n]))
+  const [t, setT] = useState(0)
+
+  useEffect(() => {
+    const start = Date.now()
+    let rafId: number
+    const tick = () => {
+      const elapsed = (Date.now() - start) % GRAPH_TOTAL
+      setT(elapsed)
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
+  const cursor = getCursorAt(t)
+
+  // Visible nodes
+  const visibleNodes = GRAPH_NODES.filter((n) => t >= n.appearAt)
+
+  // Edges with draw animation
+  const visibleEdges = GRAPH_EDGES.map((e) => {
+    if (t < e.drawStart) return null
+    const from = GRAPH_NODES.find((n) => n.id === e.fromId)!
+    const to = GRAPH_NODES.find((n) => n.id === e.toId)!
+    if (t >= e.drawEnd) return { from, endX: to.x, endY: to.y }
+    const span = e.drawEnd - e.drawStart
+    const p = easeInOut((t - e.drawStart) / span)
+    return {
+      from,
+      endX: from.x + (to.x - from.x) * p,
+      endY: from.y + (to.y - from.y) * p,
+    }
+  }).filter((e): e is NonNullable<typeof e> => e !== null)
+
+  // Click pulse
+  const activeClick = CLICK_TIMES.find((ct) => t >= ct && t < ct + 500)
+  const clickProgress = activeClick !== undefined ? (t - activeClick) / 500 : 0
+
+  // Pressing (dragging) — cursor scale + press ring
+  const isPressing =
+    (t >= 3200 && t <= 3800) ||
+    (t >= 6100 && t <= 6700)
 
   return (
-    <div className="relative w-[400px] h-[260px]">
-      {/* Ambient backdrop */}
-      <div className="absolute inset-0 bg-primary/5 rounded-3xl blur-3xl" />
+    <div className="relative w-[400px] rounded-2xl border border-border bg-card shadow-xl overflow-hidden">
+      {/* Fake canvas header */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border">
+        <div className="flex gap-1">
+          <div className="w-2 h-2 rounded-full bg-red-400/60" />
+          <div className="w-2 h-2 rounded-full bg-amber-400/60" />
+          <div className="w-2 h-2 rounded-full bg-emerald-400/60" />
+        </div>
+        <span className="text-[9px] text-muted-foreground font-mono ml-1">
+          knowledge_graph.canvas
+        </span>
+      </div>
 
-      <svg viewBox="0 0 400 260" className="relative w-full h-full">
-        {/* Edges */}
-        {edges.map((e, i) => {
-          const p1 = pos[e.from]
-          const p2 = pos[e.to]
-          return (
+      {/* Canvas area */}
+      <div className="relative h-[260px] bg-muted/10 overflow-hidden">
+        {/* Dot grid */}
+        <div
+          className="absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(0,0,0,0.18) 1px, transparent 1px)",
+            backgroundSize: "18px 18px",
+          }}
+        />
+
+        {/* SVG edges */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 400 260"
+          preserveAspectRatio="none"
+        >
+          {visibleEdges.map((e, i) => (
             <line
               key={i}
-              x1={p1.x} y1={p1.y}
-              x2={p2.x} y2={p2.y}
-              stroke="rgba(168, 85, 247, 0.4)"
-              strokeWidth={1.5}
-              className="opacity-0 animate-in fade-in"
-              style={{
-                animationDelay: `${e.delay}ms`,
-                animationDuration: "600ms",
-                animationFillMode: "forwards",
-              }}
+              x1={e.from.x}
+              y1={e.from.y}
+              x2={e.endX}
+              y2={e.endY}
+              stroke="rgba(168, 85, 247, 0.75)"
+              strokeWidth={2}
+              strokeLinecap="round"
             />
-          )
-        })}
+          ))}
+        </svg>
 
         {/* Nodes */}
-        {nodes.map((n) => (
-          <g
+        {visibleNodes.map((n) => (
+          <div
             key={n.id}
-            className="opacity-0 animate-in fade-in zoom-in-50"
+            className="absolute bg-white border-2 border-primary/70 rounded-xl px-3 py-1.5 text-xs font-semibold text-foreground shadow-md animate-in fade-in zoom-in-75 duration-500"
             style={{
-              animationDelay: `${n.delay}ms`,
-              animationDuration: "500ms",
-              animationFillMode: "forwards",
-              transformOrigin: `${n.x}px ${n.y}px`,
+              left: `${n.x}px`,
+              top: `${n.y}px`,
+              transform: "translate(-50%, -50%)",
             }}
           >
-            {/* Glow halo */}
-            <circle cx={n.x} cy={n.y} r={22} fill="rgba(168, 85, 247, 0.12)" />
-            {/* Body */}
-            <circle
-              cx={n.x}
-              cy={n.y}
-              r={18}
-              fill="white"
-              stroke="rgba(168, 85, 247, 0.8)"
-              strokeWidth={1.5}
-            />
-            {/* Label */}
-            <text
-              x={n.x}
-              y={n.y + 4}
-              textAnchor="middle"
-              className="fill-gray-900 font-medium"
-              style={{ fontSize: "10px" }}
-            >
-              {n.label}
-            </text>
-          </g>
+            {n.label}
+          </div>
         ))}
-      </svg>
+
+        {/* Click pulse ring */}
+        {activeClick !== undefined && (
+          <div
+            className="absolute rounded-full border-2 border-primary pointer-events-none"
+            style={{
+              left: `${cursor.x}px`,
+              top: `${cursor.y}px`,
+              width: `${10 + clickProgress * 36}px`,
+              height: `${10 + clickProgress * 36}px`,
+              transform: "translate(-50%, -50%)",
+              opacity: 1 - clickProgress,
+            }}
+          />
+        )}
+
+        {/* Press ring during drag */}
+        {isPressing && (
+          <div
+            className="absolute w-4 h-4 rounded-full bg-primary/25 border border-primary pointer-events-none"
+            style={{
+              left: `${cursor.x}px`,
+              top: `${cursor.y}px`,
+              transform: "translate(-50%, -50%)",
+            }}
+          />
+        )}
+
+        {/* Virtual mouse cursor */}
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{
+            left: `${cursor.x}px`,
+            top: `${cursor.y}px`,
+          }}
+        >
+          <MousePointer2
+            className={cn(
+              "h-5 w-5 fill-white text-gray-900 drop-shadow-md transition-transform duration-200",
+              isPressing && "scale-90"
+            )}
+            strokeWidth={1.5}
+          />
+        </div>
+      </div>
     </div>
   )
 }
@@ -143,8 +267,21 @@ function HarnessVisual() {
   const [phase, setPhase] = useState(0)
 
   useEffect(() => {
-    const interval = setInterval(() => setPhase((p) => (p + 1) % 4), 2400)
-    return () => clearInterval(interval)
+    // 각 phase별 다른 duration — idle은 짧게, 실행 phase는 충분히
+    // idle → proposer → verifier → content → idle → ...
+    const durations = [400, 1900, 1900, 1900]
+    let currentPhase = 0
+    let timeoutId: ReturnType<typeof setTimeout>
+
+    const tick = () => {
+      currentPhase = (currentPhase + 1) % 4
+      setPhase(currentPhase)
+      timeoutId = setTimeout(tick, durations[currentPhase])
+    }
+
+    timeoutId = setTimeout(tick, durations[0])
+
+    return () => clearTimeout(timeoutId)
   }, [])
 
   const agents = [

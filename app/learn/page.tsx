@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { RotateCcw, X } from "lucide-react"
+import { RotateCcw, X, AlertTriangle, Bell } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LeftSidebar, type Analysis } from "@/components/left-sidebar"
 import { KnowledgeGraphCanvas, type SelectedNodeData, type KnowledgeNode } from "@/components/knowledge-graph-canvas"
@@ -16,12 +16,15 @@ import {
   DEFAULT_NODES,
   getRecentAnalyses,
   saveRecentAnalysis,
+  recordStudentWeakness,
   deleteRecentAnalysis,
   resetTutorialGraph,
   saveErrorLog,
   updateErrorLogResult,
+  getNotifications,
   type SavedGraph,
   type ErrorLog,
+  type Notification,
 } from "@/lib/graph-store"
 
 const DEFAULT_MASTERED = ["1", "2", "3"]
@@ -46,6 +49,50 @@ export default function LearnPage() {
     aiContentMap: Record<string, AiRemedyContent>
   } | null>(null)
 
+  // 사용자 피드백 에러 메시지 (분석 실패 / 빈 그래프 등)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // 교수 알림 라이브 토스트 (다른 탭/storage 이벤트 → 학생 학습 중에도 즉시 표시)
+  const [incomingNotif, setIncomingNotif] = useState<Notification | null>(null)
+  const lastSeenNotifIdRef = useRef<string | null>(null)
+  const notifInitRef = useRef(true)
+
+  useEffect(() => {
+    // 초기 마운트 시 최신 알림 id 기록 — 토스트 발화 방지
+    const list = getNotifications()
+    lastSeenNotifIdRef.current = list[0]?.id ?? null
+    notifInitRef.current = false
+
+    const checkNew = () => {
+      const fresh = getNotifications()
+      const newest = fresh[0]
+      if (newest && newest.id !== lastSeenNotifIdRef.current) {
+        lastSeenNotifIdRef.current = newest.id
+        setIncomingNotif(newest)
+      }
+    }
+
+    const handler = (e: StorageEvent) => {
+      if (e.key === "linker_notifications") checkNew()
+    }
+    window.addEventListener("storage", handler)
+    return () => window.removeEventListener("storage", handler)
+  }, [])
+
+  // 토스트 자동 dismiss
+  useEffect(() => {
+    if (!incomingNotif) return
+    const t = setTimeout(() => setIncomingNotif(null), 8000)
+    return () => clearTimeout(t)
+  }, [incomingNotif])
+
+  // 에러 자동 dismiss (6초 후)
+  useEffect(() => {
+    if (!errorMessage) return
+    const t = setTimeout(() => setErrorMessage(null), 6000)
+    return () => clearTimeout(t)
+  }, [errorMessage])
+
   // UI 상태
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -58,13 +105,15 @@ export default function LearnPage() {
 
   const saveTimerRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
-  // localStorage에서 active 그래프 + 분석 기록 로드
+  // localStorage에서 active 그래프 + 해당 그래프의 분석 기록 로드
   useEffect(() => {
     const id = getActiveGraphId()
+    let loadedGraphId = "default-linalg"
     if (id) {
       const graphs = getAllGraphs()
       const found = graphs.find((g: SavedGraph) => g.id === id)
       if (found) {
+        loadedGraphId = found.id
         setActiveGraphId(found.id)
         setGraphNodes(found.nodes)
         setMasteredNodeIds(found.masteredNodeIds)
@@ -74,8 +123,8 @@ export default function LearnPage() {
       }
     }
 
-    // 최근 분석 기록 복원
-    const stored = getRecentAnalyses()
+    // 현재 그래프의 분석 기록만 복원
+    const stored = getRecentAnalyses(loadedGraphId)
     setRecentAnalyses(
       stored.map((s) => ({
         id: s.id,
@@ -105,15 +154,23 @@ export default function LearnPage() {
 
   const handleAnalyze = useCallback(async () => {
     if (!inputText.trim()) return
+
+    // Pre-check: 빈 그래프 — API 호출 전에 차단
+    if (graphNodes.length === 0) {
+      setErrorMessage("이 그래프에는 개념이 없어요. 먼저 캔버스에서 개념을 추가하거나 새 그래프를 생성해주세요.")
+      return
+    }
+
     setIsAnalyzing(true)
     setAnalysisStep(0)
     setAnalysisStepLabels([])
     setSelectedNode(null)
     setActiveRootCause(null)
     setRestoreSnapshot(null)   // 새 분석 시작 → 스냅샷 무효화
+    setErrorMessage(null)       // 이전 에러 클리어
 
     // 입력 시점에 로그 저장 (결과는 분석 완료 후 병합)
-    const logId = saveErrorLog(inputText, graphDomain)
+    const logId = saveErrorLog(inputText, graphDomain, activeGraphId)
 
     try {
       const response = await fetch("/api/analyze-error", {
@@ -122,7 +179,16 @@ export default function LearnPage() {
         body: JSON.stringify({ errorText: inputText, nodes: graphNodes }),
       })
 
-      if (!response.ok || !response.body) throw new Error("분석 API 오류")
+      if (!response.ok || !response.body) {
+        // 서버가 에러 응답 (400/429/500 등)
+        if (response.status === 429) {
+          throw new Error("요청이 너무 잦습니다. 잠시 후 다시 시도해주세요.")
+        }
+        if (response.status === 400) {
+          throw new Error("입력 형식이 올바르지 않습니다.")
+        }
+        throw new Error("분석 서버 오류. 잠시 후 다시 시도해주세요.")
+      }
 
       // ── SSE 스트림 읽기 ──────────────────────────────────
       const reader = response.body.getReader()
@@ -156,7 +222,7 @@ export default function LearnPage() {
           } else if (data.type === "result") {
             result = data as AnalyzeErrorResponse
           } else if (data.type === "error") {
-            throw new Error(data.message)
+            throw new Error(data.message || "분석 중 오류가 발생했습니다")
           }
         }
       }
@@ -196,9 +262,10 @@ export default function LearnPage() {
         rootCauseNodeId: result.rootCauseNodeId,
       }
       setRecentAnalyses((prev) => [newAnalysis, ...prev.slice(0, 4)])
-      // 영속화
+      // 영속화 (graphId 포함)
       saveRecentAnalysis({
         id: newAnalysis.id,
+        graphId: activeGraphId,
         title: newAnalysis.title,
         subject: newAnalysis.subject,
         timestamp: newAnalysis.timestamp.toISOString(),
@@ -209,10 +276,22 @@ export default function LearnPage() {
       const graphs = getAllGraphs()
       const found = graphs.find((g: SavedGraph) => g.id === activeGraphId)
       if (found) saveGraph({ ...found, analysisCount: (found.analysisCount || 0) + 1, nodes: graphNodes, masteredNodeIds, domain: graphDomain })
+
+      // 양방향 데이터 루프 — 교수 대시보드의 약점 분포에 즉시 반영
+      recordStudentWeakness({
+        graphId: activeGraphId,
+        concept: result.rootCauseLabel,
+        conceptNodeId: result.rootCauseNodeId,
+      })
     } catch (error) {
       console.error("분석 오류:", error)
       setIsAnalyzing(false)
       setAnalysisStep(0)
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+      )
     }
   }, [inputText, graphNodes, graphDomain, activeGraphId, masteredNodeIds])
 
@@ -320,6 +399,7 @@ export default function LearnPage() {
     setInputText("")
     setAnalysisStep(0)
     setAnalysisStepLabels([])
+    setErrorMessage(null)
   }, [])
 
   // 캔버스 수정 모드 저장 — 노드 구조 + 위치 persist
@@ -357,6 +437,7 @@ export default function LearnPage() {
         recentAnalyses={recentAnalyses}
         onSelectAnalysis={handleSelectAnalysis}
         onDeleteAnalysis={handleDeleteAnalysis}
+        graphId={activeGraphId}
         graphDomain={graphDomain}
         onGoHome={handleGoHome}
         showPresets={isTutorial}
@@ -390,9 +471,70 @@ export default function LearnPage() {
 
       <Chatbot graphNodes={graphNodes} graphDomain={graphDomain} />
 
+      {/* 교수 알림 라이브 토스트 (storage 이벤트로 도착) */}
+      {incomingNotif && (
+        <button
+          onClick={() => { setFading(true); setTimeout(() => router.push("/home"), 300) }}
+          className="fixed top-5 right-5 z-[100] max-w-sm text-left animate-in fade-in slide-in-from-top-4 duration-300"
+        >
+          <div className="bg-card border border-primary/40 rounded-2xl shadow-2xl shadow-primary/20 p-4 flex items-start gap-3 hover:border-primary transition-colors">
+            <div className="p-2 rounded-lg bg-primary/15 border border-primary/30 shrink-0">
+              <Bell className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                {incomingNotif.fromInstitution && (
+                  <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
+                    {incomingNotif.fromInstitution}
+                  </span>
+                )}
+                <span className="text-[9px] text-muted-foreground/70">방금 도착</span>
+              </div>
+              <p className="text-xs font-bold text-foreground line-clamp-1 mb-0.5">
+                {incomingNotif.title}
+              </p>
+              <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
+                {incomingNotif.body}
+              </p>
+              <p className="text-[9px] text-primary mt-1.5 font-semibold">
+                탭하여 알림함 열기 →
+              </p>
+            </div>
+            <span
+              onClick={(e) => { e.stopPropagation(); setIncomingNotif(null) }}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </span>
+          </div>
+        </button>
+      )}
+
+      {/* 에러 토스트 — 빈 그래프, 분석 실패, rate limit 등 */}
+      {errorMessage && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-3 fade-in duration-200 max-w-md mx-4">
+          <div className="flex items-start gap-3 bg-card border border-destructive/30 rounded-xl shadow-2xl px-4 py-3">
+            <div className="p-1 bg-destructive/10 rounded-lg shrink-0">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            </div>
+            <p className="text-sm text-foreground flex-1 leading-relaxed">{errorMessage}</p>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="p-1 rounded hover:bg-muted text-muted-foreground shrink-0"
+              aria-label="닫기"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 복원 배너 — 오답 로그/분석 기록에서 이전 상태로 들어왔을 때 표시 */}
       {restoreSnapshot && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-3 fade-in duration-200">
+        <div className={cn(
+          "fixed left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-3 fade-in duration-200",
+          errorMessage ? "bottom-20" : "bottom-5"
+        )}>
           <div className="flex items-center gap-3 bg-card border border-border rounded-xl shadow-2xl px-4 py-2.5">
             <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             <span className="text-xs text-muted-foreground">이전 분석으로 전환됨</span>

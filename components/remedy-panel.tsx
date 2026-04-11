@@ -10,7 +10,7 @@ import type { AgentTraceEntry, ExitReason } from "@/app/api/analyze-error/route"
 export interface SelectedNode {
   id: string
   label: string
-  type: "standard" | "mastered" | "missing"
+  type: "standard" | "mastered" | "missing" | "affected"
   description: string
 }
 

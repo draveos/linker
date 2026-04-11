@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Plus, BrainCircuit, BookOpen, ChevronRight, Trash2, BarChart2,
   Clock, LogOut, Sparkles, Send, RotateCcw, AlertTriangle,
-  X, FileText, Network, GraduationCap, ArrowRight,
+  X, FileText, Network, GraduationCap, ArrowRight, Bell, Lock, Bookmark, Archive, Mail, Lightbulb, Target, Flame,
   Grid3x3, TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain,
   type LucideIcon,
 } from "lucide-react"
@@ -13,7 +13,9 @@ import { cn } from "@/lib/utils"
 import {
   getAllGraphs, moveToTrash, setActiveGraphId, getRecentlyViewed,
   getTrash, restoreFromTrash, emptyTrash, createGraph,
-  type SavedGraph, type TrashItem,
+  setUserRole, isGraphDeletable, getLearningInsights,
+  getNotifications, markAllNotificationsRead, deleteNotification, clearAllNotifications,
+  type SavedGraph, type TrashItem, type Notification, type LearningInsights,
 } from "@/lib/graph-store"
 import type { ContextMessage, ValidateContextResponse } from "@/app/api/validate-context/route"
 import type { GenerateGraphResponse } from "@/app/api/generate-graph/route"
@@ -133,6 +135,7 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
   const [contextWarning, setContextWarning] = useState<"irrelevant" | "off_topic" | null>(null)
   const [pendingContext, setPendingContext] = useState<string | null>(null)
   const [toastProgress, setToastProgress] = useState(0)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const chatBottomRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
@@ -143,6 +146,7 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
   const generateGraph = useCallback(async (enrichedContext: string, dom: string) => {
     setIsGenerating(true)
     setToastProgress(0)
+    setErrorMsg(null)
     let p = 0
     progressRef.current = setInterval(() => {
       p += Math.random() * 10 + 3
@@ -155,16 +159,28 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lectureText: enrichedContext, domain: dom }),
       })
-      if (!res.ok) throw new Error("그래프 생성 실패")
+      if (!res.ok) {
+        // 서버가 에러 메시지 JSON으로 반환
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || "그래프 생성에 실패했습니다")
+      }
       const result: GenerateGraphResponse = await res.json()
       clearInterval(progressRef.current)
       setToastProgress(100)
       await new Promise((r) => setTimeout(r, 400))
       const graph = createGraph(result.domain, result.nodes)
       onDone(graph.id)
-    } catch {
+    } catch (err) {
       clearInterval(progressRef.current)
       setIsGenerating(false)
+      setErrorMsg(
+        err instanceof Error ? err.message : "그래프 생성에 실패했습니다"
+      )
+      // 실패 시 초기 폼으로 돌려서 다시 시도 가능하게
+      setShowChat(false)
+      setContextMessages([])
+      setQuestionCount(0)
+      setContextWarning(null)
     }
   }, [onDone])
 
@@ -255,6 +271,23 @@ function GenerateModal({ onClose, onDone }: GenerateModalProps) {
             </div>
           ) : !showChat ? (
             <>
+              {/* Error banner */}
+              {errorMsg && (
+                <div className="flex items-start gap-2.5 bg-destructive/10 border border-destructive/30 rounded-xl p-3">
+                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-destructive mb-1">생성 실패</p>
+                    <p className="text-xs text-foreground/80 leading-relaxed">{errorMsg}</p>
+                  </div>
+                  <button
+                    onClick={() => setErrorMsg(null)}
+                    className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground shrink-0"
+                    aria-label="닫기"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="text-xs font-medium text-foreground block mb-1.5">도메인 / 과목명</label>
                 <input
@@ -383,6 +416,13 @@ export default function HomePage() {
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [fading, setFading] = useState(false)
   const [showTrash, setShowTrash] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [showNotifPanel, setShowNotifPanel] = useState(false)
+  const [activeNotif, setActiveNotif] = useState<Notification | null>(null)
+  const [incomingToast, setIncomingToast] = useState<Notification | null>(null)
+  const [bellPulse, setBellPulse] = useState(false)
+  const initialNotifRef = useRef(true)
+  const lastNotifIdRef = useRef<string | null>(null)
 
   const refresh = useCallback(() => {
     const all = getAllGraphs().sort((a, b) => {
@@ -393,9 +433,37 @@ export default function HomePage() {
     setGraphs(all)
     setRecentlyViewed(getRecentlyViewed(3))
     setTrash(getTrash())
+    setNotifications(getNotifications())
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  // 다른 탭(교수 화면)에서 localStorage가 변경되면 즉시 반영 — 데모 핵심
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (!e.key || e.key.startsWith("linker_")) refresh()
+    }
+    window.addEventListener("storage", handler)
+    return () => window.removeEventListener("storage", handler)
+  }, [refresh])
+
+  // 새 알림 도착 감지 → 토스트 + 종 펄스
+  useEffect(() => {
+    const newest = notifications[0]
+    if (initialNotifRef.current) {
+      initialNotifRef.current = false
+      lastNotifIdRef.current = newest?.id ?? null
+      return
+    }
+    if (newest && newest.id !== lastNotifIdRef.current) {
+      lastNotifIdRef.current = newest.id
+      setIncomingToast(newest)
+      setBellPulse(true)
+      const t1 = setTimeout(() => setIncomingToast(null), 6000)
+      const t2 = setTimeout(() => setBellPulse(false), 3000)
+      return () => { clearTimeout(t1); clearTimeout(t2) }
+    }
+  }, [notifications])
 
   const handleOpenGraph = (graph: SavedGraph) => {
     setActiveGraphId(graph.id)
@@ -419,6 +487,26 @@ export default function HomePage() {
     refresh()
   }
 
+  const unreadCount = notifications.filter((n) => !n.read).length
+
+  const toggleNotifPanel = () => {
+    if (!showNotifPanel && unreadCount > 0) {
+      markAllNotificationsRead()
+    }
+    setShowNotifPanel((v) => !v)
+    refresh()
+  }
+
+  const handleDeleteNotif = (id: string) => {
+    deleteNotification(id)
+    refresh()
+  }
+
+  const handleClearNotifs = () => {
+    clearAllNotifications()
+    refresh()
+  }
+
   const handleGenerateDone = (graphId: string) => {
     setActiveGraphId(graphId)
     setFading(true)
@@ -433,6 +521,14 @@ export default function HomePage() {
   const totalConcepts = graphs.reduce((s, g) => s + g.nodes.length, 0)
   const totalAnalyses = graphs.reduce((s, g) => s + g.analysisCount, 0)
   const continueGraph = recentlyViewed[0] ?? graphs[0] ?? null
+  const insights: LearningInsights | null = continueGraph ? getLearningInsights(continueGraph) : null
+
+  const handleOpenFrontier = () => {
+    if (!insights?.frontierNode || !continueGraph) return
+    setActiveGraphId(continueGraph.id)
+    setFading(true)
+    setTimeout(() => router.push("/learn"), 300)
+  }
 
   return (
     <div
@@ -476,6 +572,140 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/onboarding")}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors px-2.5 py-1.5 rounded-lg hover:bg-primary/5"
+              title="온보딩 다시 보기"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              튜토리얼
+            </button>
+            <button
+              onClick={() => {
+                setUserRole("teacher")
+                setFading(true)
+                setTimeout(() => router.push("/teacher"), 300)
+              }}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors px-2.5 py-1.5 rounded-lg hover:bg-primary/5"
+              title="교수 모드로 전환"
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              교수 모드
+            </button>
+
+            {/* Notification bell */}
+            <div className="relative">
+              <button
+                onClick={toggleNotifPanel}
+                className={cn(
+                  "relative w-9 h-9 rounded-lg border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-all",
+                  bellPulse
+                    ? "border-rose-500/60 text-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.18)]"
+                    : "border-border"
+                )}
+                title="알림"
+              >
+                <Bell className={cn("h-4 w-4", bellPulse && "animate-bounce")} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center shadow-md shadow-rose-500/40 animate-in zoom-in duration-200">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifPanel && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowNotifPanel(false)}
+                  />
+                  <div className="absolute right-0 top-11 z-50 w-80 max-h-[480px] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <Bell className="h-3.5 w-3.5 text-primary" />
+                        <p className="text-xs font-bold text-foreground">알림</p>
+                        {notifications.length > 0 && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {notifications.length}
+                          </span>
+                        )}
+                      </div>
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={handleClearNotifs}
+                          className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                        >
+                          전체 삭제
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-12 text-center">
+                          <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-3" />
+                          <p className="text-xs text-muted-foreground">새로운 알림이 없습니다</p>
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-border">
+                          {notifications.map((n) => {
+                            const NotifIcon =
+                              n.kind === "intervention" ? Sparkles
+                              : n.kind === "retire" ? Archive
+                              : n.kind === "message" ? Mail
+                              : Bell
+                            return (
+                              <div
+                                key={n.id}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => { setActiveNotif(n); setShowNotifPanel(false) }}
+                                onKeyDown={(e) => { if (e.key === "Enter") { setActiveNotif(n); setShowNotifPanel(false) } }}
+                                className="w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex items-start gap-3 group cursor-pointer"
+                              >
+                                <div className={cn(
+                                  "p-1.5 rounded-lg shrink-0 border",
+                                  n.kind === "retire"
+                                    ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+                                    : "bg-primary/10 border-primary/20 text-primary"
+                                )}>
+                                  <NotifIcon className="h-3 w-3" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    {n.fromInstitution && (
+                                      <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
+                                        {n.fromInstitution}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-semibold text-foreground line-clamp-1 mb-0.5">
+                                    {n.title}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
+                                    {n.body}
+                                  </p>
+                                  <p className="text-[9px] text-muted-foreground/70 mt-1">
+                                    {n.fromName ? `${n.fromName} · ` : ""}{timeAgo(n.sentAt)}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteNotif(n.id) }}
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all rounded"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-sm font-bold text-primary-foreground shadow-md shadow-primary/20">
               U
             </div>
@@ -576,6 +806,116 @@ export default function HomePage() {
           )
         })()}
 
+        {/* ── Learning Insights (메타인지 대시보드) ── */}
+        {insights && continueGraph && (insights.totalAnalyses > 0 || insights.frontierNode || insights.topWeaknesses.length > 0) && (
+          <div>
+            <div className="flex items-center gap-2 mb-5">
+              <Lightbulb className="h-4 w-4 text-amber-500" />
+              <h2 className="text-xl font-bold text-foreground">내 학습 인사이트</h2>
+              <span className="text-xs text-muted-foreground ml-1">{continueGraph.domain}</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 1. 자주 막히는 개념 */}
+              <div className="rounded-2xl border border-border bg-card p-5 hover:shadow-md transition-all">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20">
+                    <Flame className="h-3.5 w-3.5 text-rose-500" />
+                  </div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">자주 막히는 개념</p>
+                </div>
+                {insights.topWeaknesses.length === 0 ? (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    아직 결손 패턴이 없습니다. 분석을 진행하면 자동으로 추적됩니다.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {insights.topWeaknesses.map((w, i) => (
+                      <div key={w.nodeId} className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-[10px] font-bold text-rose-600">
+                          {i + 1}
+                        </div>
+                        <span className="text-sm font-semibold text-foreground flex-1 truncate">{w.concept}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{w.count}회</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. 다음 학습 추천 (frontier) */}
+              <div
+                onClick={insights.frontierNode ? handleOpenFrontier : undefined}
+                className={cn(
+                  "rounded-2xl border p-5 transition-all",
+                  insights.frontierNode
+                    ? "border-primary/30 bg-gradient-to-br from-primary/[0.06] to-transparent hover:shadow-md hover:border-primary/50 cursor-pointer"
+                    : "border-border bg-card"
+                )}
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                    <Target className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">다음 학습 추천</p>
+                </div>
+                {insights.frontierNode ? (
+                  <>
+                    <p className="text-sm font-bold text-foreground mb-1 truncate">
+                      {insights.frontierNode.label}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed mb-3">
+                      {insights.frontierNode.description}
+                    </p>
+                    <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary">
+                      <span>학습 시작</span>
+                      <ArrowRight className="h-2.5 w-2.5" />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    선행 개념을 더 마스터하면 다음 frontier가 열립니다.
+                  </p>
+                )}
+              </div>
+
+              {/* 3. 학습 통계 + trend */}
+              <div className="rounded-2xl border border-border bg-card p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                    <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                  </div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">학습 진척</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-2xl font-black text-foreground leading-none">
+                      {insights.masteryPct}<span className="text-sm ml-0.5">%</span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">숙련도</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-foreground leading-none">
+                      {insights.totalAnalyses}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">분석 횟수</p>
+                  </div>
+                </div>
+                <div className={cn(
+                  "mt-3 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                  insights.recentTrend === "up" && "text-emerald-600 bg-emerald-500/10 border-emerald-500/30",
+                  insights.recentTrend === "flat" && "text-muted-foreground bg-muted border-border",
+                  insights.recentTrend === "new" && "text-primary bg-primary/10 border-primary/30",
+                )}>
+                  {insights.recentTrend === "up" && <>↑ 순항 중</>}
+                  {insights.recentTrend === "flat" && <>→ 안정적</>}
+                  {insights.recentTrend === "new" && <>● 시작 단계</>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── All Graphs Grid ── */}
         <div>
           <div className="flex items-center justify-between mb-5">
@@ -614,6 +954,8 @@ export default function HomePage() {
               const m = mastery(graph)
               const { icon: Icon, theme } = getDomainStyle(graph.domain)
               const t = THEMES[theme]
+              const deletable = isGraphDeletable(graph)
+              const isInstitutional = !!graph.institution
               return (
                 <div
                   key={graph.id}
@@ -623,7 +965,9 @@ export default function HomePage() {
                     "hover:shadow-xl hover:-translate-y-1 transition-all duration-300",
                     graph.isTutorial
                       ? "border-primary/30 shadow-[0_0_30px_rgba(168,85,247,0.08)]"
-                      : "border-border"
+                      : isInstitutional
+                        ? "border-primary/25"
+                        : "border-border"
                   )}
                 >
                   {/* Top: gradient + large icon */}
@@ -646,19 +990,41 @@ export default function HomePage() {
                       />
                     </div>
 
-                    {/* Tutorial badge / Delete button */}
+                    {/* Top-right badge area */}
                     {graph.isTutorial ? (
                       <div className="absolute top-3 right-3 bg-primary text-primary-foreground text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md shadow-primary/30">
                         <GraduationCap className="h-2.5 w-2.5" />
                         TUTORIAL
                       </div>
-                    ) : (
+                    ) : deletable ? (
                       <button
                         onClick={(e) => handleDelete(graph.id, e)}
                         className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-card/70 backdrop-blur border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground text-muted-foreground"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
+                    ) : (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-card/70 backdrop-blur border border-border flex items-center justify-center text-muted-foreground/70 cursor-not-allowed"
+                        title="기관 발급 그래프는 교수가 폐지한 후에야 삭제할 수 있습니다"
+                      >
+                        <Lock className="h-3.5 w-3.5" />
+                      </div>
+                    )}
+
+                    {/* Institution badge (top-left) */}
+                    {isInstitutional && (
+                      <div className={cn(
+                        "absolute top-3 left-3 inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border shadow-sm",
+                        graph.retired
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                          : "bg-primary/15 text-primary border-primary/30"
+                      )}>
+                        {graph.retired
+                          ? <><Archive className="h-2.5 w-2.5" /> 폐지됨</>
+                          : <><Bookmark className="h-2.5 w-2.5" /> {graph.institution}</>}
+                      </div>
                     )}
 
                     {/* Concept count badge */}
@@ -670,9 +1036,17 @@ export default function HomePage() {
 
                   {/* Bottom: info */}
                   <div className="p-5 space-y-3">
-                    <h3 className="font-bold text-lg text-foreground leading-tight group-hover:text-primary transition-colors">
-                      {graph.domain}
-                    </h3>
+                    <div>
+                      <h3 className="font-bold text-lg text-foreground leading-tight group-hover:text-primary transition-colors">
+                        {graph.domain}
+                      </h3>
+                      {isInstitutional && graph.instructorName && (
+                        <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                          <GraduationCap className="h-2.5 w-2.5" />
+                          {graph.instructorName} · {graph.institution}
+                        </p>
+                      )}
+                    </div>
 
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px] text-muted-foreground">
@@ -774,6 +1148,123 @@ export default function HomePage() {
           onClose={() => setShowGenerateModal(false)}
           onDone={handleGenerateDone}
         />
+      )}
+
+      {/* Incoming notification toast (live arrival via storage event) */}
+      {incomingToast && (
+        <button
+          onClick={() => { setActiveNotif(incomingToast); setIncomingToast(null) }}
+          className="fixed top-20 right-6 z-[120] max-w-sm text-left animate-in fade-in slide-in-from-top-4 duration-300"
+        >
+          <div className="bg-card border border-primary/40 rounded-2xl shadow-2xl shadow-primary/15 p-4 flex items-start gap-3 hover:border-primary transition-colors">
+            <div className="p-2 rounded-lg bg-primary/15 border border-primary/30 shrink-0">
+              <Bell className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                {incomingToast.fromInstitution && (
+                  <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
+                    {incomingToast.fromInstitution}
+                  </span>
+                )}
+                <span className="text-[9px] text-muted-foreground/70">방금</span>
+              </div>
+              <p className="text-xs font-bold text-foreground line-clamp-1 mb-0.5">
+                {incomingToast.title}
+              </p>
+              <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
+                {incomingToast.body}
+              </p>
+            </div>
+            <span
+              onClick={(e) => { e.stopPropagation(); setIncomingToast(null) }}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded shrink-0"
+            >
+              <X className="h-3 w-3" />
+            </span>
+          </div>
+        </button>
+      )}
+
+      {/* Notification detail modal — 교수가 보낸 학습 독려/팝업 */}
+      {activeNotif && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setActiveNotif(null)}
+          />
+          <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={cn(
+              "px-6 py-5 border-b border-border bg-gradient-to-br",
+              activeNotif.kind === "retire"
+                ? "from-amber-500/15 via-amber-500/5 to-transparent"
+                : "from-primary/15 via-primary/5 to-transparent"
+            )}>
+              <div className="flex items-start gap-3">
+                <div className={cn(
+                  "p-2.5 rounded-xl border shrink-0",
+                  activeNotif.kind === "retire"
+                    ? "bg-amber-500/15 border-amber-500/30 text-amber-600"
+                    : "bg-primary/15 border-primary/30 text-primary"
+                )}>
+                  {activeNotif.kind === "intervention" ? <Sparkles className="h-4 w-4" />
+                    : activeNotif.kind === "retire" ? <Archive className="h-4 w-4" />
+                    : activeNotif.kind === "message" ? <Mail className="h-4 w-4" />
+                    : <Bell className="h-4 w-4" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  {activeNotif.fromInstitution && (
+                    <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-1">
+                      {activeNotif.fromInstitution}
+                    </p>
+                  )}
+                  <h3 className="text-base font-bold text-foreground leading-tight">
+                    {activeNotif.title}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setActiveNotif(null)}
+                  className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                {activeNotif.body}
+              </p>
+
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-2 border-t border-border">
+                {activeNotif.fromName && (
+                  <>
+                    <GraduationCap className="h-3 w-3" />
+                    <span>{activeNotif.fromName}</span>
+                    <span>·</span>
+                  </>
+                )}
+                <Clock className="h-3 w-3" />
+                <span>{timeAgo(activeNotif.sentAt)}</span>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-border bg-muted/20 flex items-center gap-2">
+              <button
+                onClick={() => setActiveNotif(null)}
+                className="flex-1 h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                닫기
+              </button>
+              <button
+                onClick={() => { handleDeleteNotif(activeNotif.id); setActiveNotif(null) }}
+                className="h-10 px-4 rounded-xl text-sm font-medium text-muted-foreground hover:text-destructive transition-colors"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

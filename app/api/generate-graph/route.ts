@@ -98,14 +98,46 @@ export async function POST(req: NextRequest) {
     const rawText = message.content[0].type === "text" ? message.content[0].text : ""
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
-      throw new Error("AI 응답에서 JSON을 파싱할 수 없습니다")
+      return NextResponse.json(
+        { error: "AI가 응답을 생성하지 못했어요. 좀 더 구체적인 내용을 입력해주세요." },
+        { status: 422 }
+      )
     }
 
-    const result: GenerateGraphResponse = JSON.parse(jsonMatch[0])
+    let result: GenerateGraphResponse
+    try {
+      result = JSON.parse(jsonMatch[0])
+    } catch {
+      return NextResponse.json(
+        { error: "AI 응답을 해석하지 못했어요. 다시 시도해주세요." },
+        { status: 422 }
+      )
+    }
+
+    // 노드 검증 — 빈 배열 / 너무 적음
+    if (!result.nodes || !Array.isArray(result.nodes) || result.nodes.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "입력한 내용에서 학습 개념을 추출하지 못했어요. 구체적인 학습 주제나 교재 내용을 입력해주세요.",
+        },
+        { status: 422 }
+      )
+    }
+    if (result.nodes.length < 2) {
+      return NextResponse.json(
+        {
+          error:
+            "개념이 너무 적어요 (최소 2개 필요). 좀 더 자세한 설명을 입력해주세요.",
+        },
+        { status: 422 }
+      )
+    }
 
     // 순환 참조 검증
     const hasCycle = detectCycle(result.nodes)
     if (hasCycle) {
+      result.warnings = result.warnings ?? []
       result.warnings.push("⚠️ 순환 참조가 감지되었습니다. 그래프를 확인하세요.")
     }
 

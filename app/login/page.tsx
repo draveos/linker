@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { BrainCircuit, Eye, EyeOff, ArrowRight, ArrowLeft } from "lucide-react"
+import { BrainCircuit, Eye, EyeOff, ArrowRight, ArrowLeft, User, GraduationCap } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getUserRole, setUserRole, type UserRole } from "@/lib/graph-store"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -13,6 +14,12 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [role, setRole] = useState<UserRole>("student")
+
+  // 저장된 역할로 초기화 (signup에서 넘어왔을 때)
+  useEffect(() => {
+    setRole(getUserRole())
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -21,9 +28,18 @@ export default function LoginPage() {
     setLoading(true)
     await new Promise((r) => setTimeout(r, 800))
     setLoading(false)
-    // 첫 로그인이면 온보딩으로, 아니면 홈으로
-    const onboarded = typeof window !== "undefined" && localStorage.getItem("linker_onboarded") === "true"
-    router.push(onboarded ? "/home" : "/onboarding")
+
+    // 역할 저장
+    setUserRole(role)
+
+    if (role === "teacher") {
+      // 교수는 대시보드로 바로 이동 (온보딩 없음)
+      router.push("/teacher")
+    } else {
+      // 학생은 첫 로그인이면 온보딩으로, 아니면 홈으로
+      const onboarded = typeof window !== "undefined" && localStorage.getItem("linker_onboarded") === "true"
+      router.push(onboarded ? "/home" : "/onboarding")
+    }
   }
 
   return (
@@ -71,7 +87,40 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-2xl font-bold text-foreground mb-1">어서오세요!</h1>
-          <p className="text-muted-foreground text-sm mb-8">계정에 로그인하세요</p>
+          <p className="text-muted-foreground text-sm mb-6">계정에 로그인하세요</p>
+
+          {/* Role toggle */}
+          <div className="mb-5">
+            <label className="text-xs font-medium text-foreground block mb-2">역할 선택</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRole("student")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm rounded-xl border-2 transition-all",
+                  role === "student"
+                    ? "border-primary bg-primary/10 text-primary font-semibold shadow-sm shadow-primary/10"
+                    : "border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/50"
+                )}
+              >
+                <User className="h-4 w-4" />
+                학생
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("teacher")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-3 text-sm rounded-xl border-2 transition-all",
+                  role === "teacher"
+                    ? "border-primary bg-primary/10 text-primary font-semibold shadow-sm shadow-primary/10"
+                    : "border-border bg-background text-muted-foreground hover:border-border hover:bg-muted/50"
+                )}
+              >
+                <GraduationCap className="h-4 w-4" />
+                교수
+              </button>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

@@ -58,8 +58,35 @@ export interface KnowledgeNode {
 export interface SelectedNodeData {
   id: string
   label: string
-  type: "standard" | "mastered" | "missing"
+  type: "standard" | "mastered" | "missing" | "affected"
   description: string
+}
+
+/**
+ * 주어진 root cause 노드의 모든 후속(직간접 descendant) 노드 id 집합을 계산.
+ * prerequisites 그래프를 역방향으로 BFS — "이 노드를 prereq로 갖는 노드"를 찾아 확장.
+ */
+function computeAffectedDescendants(nodes: KnowledgeNode[], rootCauseId: string | null | undefined): Set<string> {
+  if (!rootCauseId) return new Set()
+  const childMap = new Map<string, string[]>()
+  nodes.forEach((n) => {
+    n.prerequisites.forEach((p) => {
+      if (!childMap.has(p)) childMap.set(p, [])
+      childMap.get(p)!.push(n.id)
+    })
+  })
+  const result = new Set<string>()
+  const queue = [rootCauseId]
+  while (queue.length) {
+    const cur = queue.shift()!
+    const children = childMap.get(cur) ?? []
+    for (const c of children) {
+      if (result.has(c)) continue
+      result.add(c)
+      queue.push(c)
+    }
+  }
+  return result
 }
 
 interface KnowledgeGraphCanvasProps {
@@ -142,33 +169,43 @@ function computeLayout(nodes: KnowledgeNode[]): Record<string, { x: number; y: n
 function resolveNodeType(
     nodeId: string,
     masteredNodeIds: string[],
-    activeRootCauseId?: string | null
-): "standard" | "mastered" | "missing" {
+    activeRootCauseId?: string | null,
+    affectedSet?: Set<string>
+): "standard" | "mastered" | "missing" | "affected" {
   if (nodeId === activeRootCauseId) return "missing"
   if (masteredNodeIds.includes(nodeId)) return "mastered"
+  if (affectedSet && affectedSet.has(nodeId)) return "affected"
   return "standard"
 }
 
 // SVG에서 CSS 변수(hsl(var(...)))가 렌더 안 되는 경우 대비 → 직접 색상 사용
 const EDGE_COLOR_DEFAULT  = "#94a3b8"  // slate-400
 const EDGE_COLOR_DANGER   = "#ef4444"  // red-500
+const EDGE_COLOR_AFFECTED = "#fb923c"  // orange-400 — 결손 전파 영향권
 const EDGE_COLOR_TRAVERSE = "#f59e0b"  // amber-400
 
 function buildEdgeStyle(
     isPathToRootCause: boolean,
+    isAffectedSubtree: boolean,
     filterType: string,
     isAnalyzing?: boolean
 ) {
+  const color = isPathToRootCause
+    ? EDGE_COLOR_DANGER
+    : isAffectedSubtree
+      ? EDGE_COLOR_AFFECTED
+      : EDGE_COLOR_DEFAULT
+  const width = isPathToRootCause ? 2.5 : isAffectedSubtree ? 2 : 1.5
   return {
     style: {
-      stroke: isPathToRootCause ? EDGE_COLOR_DANGER : EDGE_COLOR_DEFAULT,
-      strokeWidth: isPathToRootCause ? 2.5 : 1.5,
+      stroke: color,
+      strokeWidth: width,
       opacity: filterType !== "all" ? 0.3 : 1,
     },
     animated: !!(isAnalyzing && isPathToRootCause),
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: isPathToRootCause ? EDGE_COLOR_DANGER : EDGE_COLOR_DEFAULT,
+      color,
       width: 16,
       height: 16,
     },
@@ -228,6 +265,8 @@ function ConceptNode({ data, selected, id }: NodeProps) {
                 nodeType === "missing" &&
                 "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
                 nodeType === "missing" && isAnalyzing && "animate-pulse",
+                nodeType === "affected" &&
+                "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-400 shadow-orange-500/20 animate-pulse",
                 selected && "ring-2 ring-ring ring-offset-2",
                 isFiltered && "opacity-20",
                 editMode && "cursor-move"
@@ -241,6 +280,7 @@ function ConceptNode({ data, selected, id }: NodeProps) {
           <div className="flex items-center justify-center gap-2">
             {nodeType === "mastered" && <Check className="h-4 w-4" />}
             {nodeType === "missing" && <AlertTriangle className="h-4 w-4" />}
+            {nodeType === "affected" && <AlertTriangle className="h-3.5 w-3.5 opacity-80" />}
             {nodeType === "standard" && <Circle className="h-3 w-3 opacity-50" />}
             <span className="font-medium text-sm">{label}</span>
           </div>
@@ -346,7 +386,7 @@ export function KnowledgeGraphCanvas({
                                        onSaveGraph,
                                      }: KnowledgeGraphCanvasProps) {
   const [editMode, setEditMode] = useState(false)
-  const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing">("all")
+  const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing" | "affected">("all")
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({
     type: null,
     id: null,
@@ -414,8 +454,9 @@ export function KnowledgeGraphCanvas({
         const autoPositions = computeLayout(kNodes)
         // savedPositions 우선, 없는 노드는 auto-layout으로 fallback
         const positions = { ...autoPositions, ...(savedPositions ?? {}) }
+        const affectedSet = computeAffectedDescendants(kNodes, rootCauseId)
         return kNodes.map((node) => {
-          const nodeType = resolveNodeType(node.id, mIds, rootCauseId)
+          const nodeType = resolveNodeType(node.id, mIds, rootCauseId, affectedSet)
           const isFiltered = fType !== "all" && fType !== nodeType
           return {
             id: node.id,
@@ -441,18 +482,24 @@ export function KnowledgeGraphCanvas({
   const buildEdges = useCallback(
       (kNodes: KnowledgeNode[], rootCauseId?: string | null, fType = "all"): Edge[] => {
         const nodeIdSet = new Set(kNodes.map((n) => n.id))
+        const affectedSet = computeAffectedDescendants(kNodes, rootCauseId)
         const edges: Edge[] = []
         kNodes.forEach((node) => {
           node.prerequisites.forEach((prereqId) => {
             if (!nodeIdSet.has(prereqId)) return
             const isPath = !!rootCauseId && (node.id === rootCauseId || prereqId === rootCauseId)
+            // 결손 전파 subtree: 양 끝이 (root cause + descendants) 안에 들어 있고, 직접 path는 아님
+            const inSubtree =
+              !!rootCauseId && !isPath &&
+              (prereqId === rootCauseId || affectedSet.has(prereqId)) &&
+              affectedSet.has(node.id)
             edges.push({
               id: `${prereqId}-${node.id}`,
               source: prereqId,
               target: node.id,
               type: "deletable",
               data: { _editMode: false },
-              ...buildEdgeStyle(isPath, fType, isAnalyzing),
+              ...buildEdgeStyle(isPath, inSubtree, fType, isAnalyzing),
             })
           })
         })
@@ -484,9 +531,11 @@ export function KnowledgeGraphCanvas({
   useEffect(() => {
     if (editMode) return
 
+    const affectedSet = computeAffectedDescendants(knowledgeNodes, activeRootCauseId)
+
     setNodes((nds) =>
         nds.map((n) => {
-          const nodeType = resolveNodeType(n.id, masteredNodeIds, activeRootCauseId)
+          const nodeType = resolveNodeType(n.id, masteredNodeIds, activeRootCauseId, affectedSet)
           const isFiltered = filterType !== "all" && filterType !== nodeType
           return {
             ...n,
@@ -507,9 +556,13 @@ export function KnowledgeGraphCanvas({
           const isPath =
               !!activeRootCauseId &&
               (e.target === activeRootCauseId || e.source === activeRootCauseId)
+          const inSubtree =
+              !!activeRootCauseId && !isPath &&
+              (e.source === activeRootCauseId || affectedSet.has(e.source)) &&
+              affectedSet.has(e.target)
           return {
             ...e,
-            ...buildEdgeStyle(isPath, filterType, isAnalyzing),
+            ...buildEdgeStyle(isPath, inSubtree, filterType, isAnalyzing),
           }
         })
     )
@@ -520,6 +573,7 @@ export function KnowledgeGraphCanvas({
     filterType,
     selectedNodeId,
     editMode,
+    knowledgeNodes,
     setNodes,
     setEdges,
   ])
@@ -580,7 +634,7 @@ export function KnowledgeGraphCanvas({
           ...params,
           type: "deletable",
           data: { _editMode: true },
-          ...buildEdgeStyle(false, filterType, false),
+          ...buildEdgeStyle(false, false, filterType, false),
         }, eds))
       },
       [editMode, filterType, setEdges]
@@ -597,10 +651,11 @@ export function KnowledgeGraphCanvas({
         }
         const kNode = knowledgeNodes.find((n) => n.id === node.id)
         if (!kNode) return
+        const affectedSet = computeAffectedDescendants(knowledgeNodes, activeRootCauseId)
         onNodeClick({
           id: node.id,
           label: kNode.label,
-          type: resolveNodeType(node.id, masteredNodeIds, activeRootCauseId),
+          type: resolveNodeType(node.id, masteredNodeIds, activeRootCauseId, affectedSet),
           description: kNode.description,
         })
       },
@@ -754,7 +809,7 @@ export function KnowledgeGraphCanvas({
   // ── 필터 토글 ─────────────────────────────────────────────
 
   const toggleFilter = useCallback(
-      (type: "mastered" | "standard" | "missing") =>
+      (type: "mastered" | "standard" | "missing" | "affected") =>
           setFilterType((prev) => (prev === type ? "all" : type)),
       []
   )
@@ -1020,6 +1075,7 @@ export function KnowledgeGraphCanvas({
                     { key: "mastered", color: "bg-blue-500", label: "완료된 개념" },
                     { key: "standard", color: "bg-muted-foreground/30 border border-border", label: "학습 필요" },
                     { key: "missing", color: "bg-destructive", label: "결손 개념" },
+                    { key: "affected", color: "bg-orange-400", label: "영향 받음" },
                   ] as const
               ).map(({ key, color, label }) => (
                   <button
@@ -1035,6 +1091,23 @@ export function KnowledgeGraphCanvas({
                   </button>
               ))}
             </div>
+
+            {/* 결손 전파 카운트 — root cause 활성 시 표시 */}
+            {activeRootCauseId && (() => {
+              const affected = computeAffectedDescendants(knowledgeNodes, activeRootCauseId)
+              if (affected.size === 0) return null
+              return (
+                <div className="mt-2 bg-orange-50 dark:bg-orange-950/40 backdrop-blur-sm border border-orange-400/40 rounded-xl px-3 py-2 shadow-lg max-w-[200px] animate-in fade-in slide-in-from-top-1 duration-300">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wider mb-0.5">
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    결손 전파
+                  </div>
+                  <p className="text-[11px] text-orange-700 dark:text-orange-300 leading-snug">
+                    이 결손이 <strong>{affected.size}개</strong> 후속 개념에 영향을 미칩니다
+                  </p>
+                </div>
+              )
+            })()}
           </div>
 
           {/* ── Connection Error Toast ── */}

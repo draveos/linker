@@ -14,6 +14,57 @@ export interface SavedGraph {
   lastViewedAt?: string
   nodePositions?: Record<string, { x: number; y: number }>
   isTutorial?: boolean   // 튜토리얼/데모 그래프 — 삭제 불가, 데모 예시 + 리셋 버튼 제공
+  // ── 교육기관 제공 그래프 ──
+  institution?: string       // 발급 기관 (예: "KIT 컴퓨터공학과")
+  instructorName?: string    // 담당 교수
+  retired?: boolean          // 교수가 폐지한 후에야 학생이 삭제 가능
+  retiredAt?: string
+}
+
+/**
+ * 교수가 직접 만든 학급 — mock 데이터와 별개로 localStorage에 저장.
+ * 두 탭(교수/학생) 데모용으로, 백엔드 도입 시 실제 학급 관리가 들어올 자리.
+ */
+export interface UserClass {
+  id: string
+  name: string
+  subject: string         // 도메인 키워드 (아이콘 매칭)
+  linkedGraphId: string
+  createdAt: string
+}
+
+/**
+ * 학생이 실제로 분석을 돌려 발견한 결손 — 교수 대시보드의 weak point 분포에 실시간 누적된다.
+ * 양방향 데이터 루프의 핵심 (학생 분석 → 교수 통계).
+ */
+export interface LiveStudentRecord {
+  id: string
+  graphId: string
+  concept: string          // 결손 노드 라벨 (matchable to mock weakPoints)
+  conceptNodeId: string
+  studentName: string      // 데모용 — 익명 풀에서 랜덤
+  recordedAt: string
+}
+
+export interface LearningInsights {
+  totalAnalyses: number
+  topWeaknesses: Array<{ concept: string; count: number; nodeId: string }>
+  masteryPct: number
+  frontierNode: { id: string; label: string; description: string } | null   // 다음 학습 추천
+  recentTrend: "up" | "flat" | "new"   // 단순 휴리스틱
+}
+
+export interface Notification {
+  id: string
+  kind: "intervention" | "message" | "retire" | "system"
+  title: string
+  body: string
+  fromName?: string          // 보낸 사람 (예: "김교수")
+  fromInstitution?: string   // 발신 기관
+  classId?: string           // 연관 mock class
+  graphId?: string           // 연관 그래프
+  sentAt: string             // ISO
+  read: boolean
 }
 
 export interface TrashItem {
@@ -23,14 +74,16 @@ export interface TrashItem {
 
 export interface ErrorLog {
   id: string
+  graphId?: string        // 그래프별 스코핑 (optional for migration)
   text: string
   domain: string
   savedAt: string
-  result?: AnalyzeErrorResponse   // 분석 완료 후 결과 포함
+  result?: AnalyzeErrorResponse
 }
 
 export interface StoredAnalysis {
   id: string
+  graphId?: string        // 그래프별 스코핑 (optional for migration)
   title: string
   subject: string
   timestamp: string       // ISO
@@ -44,6 +97,32 @@ const ACTIVE_KEY = "linker_active_graph_id"
 const TRASH_KEY  = "linker_trash"
 const ERROR_LOG_KEY = "linker_error_logs"
 const ANALYSIS_KEY = "linker_recent_analyses"
+const ROLE_KEY   = "linker_role"
+const NOTIF_KEY  = "linker_notifications"
+const LIVE_REC_KEY = "linker_live_records"
+const USER_CLASS_KEY = "linker_user_classes"
+const MAX_NOTIFICATIONS = 30
+const MAX_LIVE_RECORDS = 50
+const MAX_USER_CLASSES = 10
+
+// 학생 익명 표시용 — 데모 리얼리즘
+const ANON_STUDENT_NAMES = [
+  "민준", "서연", "예린", "지훈", "하윤", "도윤", "서윤",
+  "지우", "예준", "시우", "건우", "서준", "유나", "다은",
+]
+
+export type UserRole = "student" | "teacher"
+
+export function getUserRole(): UserRole {
+  if (!isClient()) return "student"
+  const r = localStorage.getItem(ROLE_KEY)
+  return r === "teacher" ? "teacher" : "student"
+}
+
+export function setUserRole(role: UserRole): void {
+  if (!isClient()) return
+  localStorage.setItem(ROLE_KEY, role)
+}
 
 const MAX_TRASH_ITEMS   = 3
 const TRASH_EXPIRY_MS   = 7 * 24 * 60 * 60 * 1000   // 7일
@@ -76,6 +155,8 @@ const SEED_GRAPHS: SavedGraph[] = [
     updatedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     lastViewedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     isTutorial: true,
+    institution: "KIT 컴퓨터공학과",
+    instructorName: "김교수",
   },
   {
     id: "default-calculus",
@@ -92,8 +173,18 @@ const SEED_GRAPHS: SavedGraph[] = [
     analysisCount: 0,
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    institution: "KIT 컴퓨터공학과",
+    instructorName: "김교수",
   },
 ]
+
+/** 학생이 그래프를 삭제할 수 있는지 — 폐지되면 어떤 경우든 가능, 그 외 튜토리얼·기관 발급은 보호 */
+export function isGraphDeletable(graph: SavedGraph): boolean {
+  if (graph.retired) return true
+  if (graph.isTutorial) return false
+  if (graph.institution) return false
+  return true
+}
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -110,10 +201,17 @@ export function getAllGraphs(): SavedGraph[] {
       return SEED_GRAPHS
     }
     const stored = JSON.parse(raw) as SavedGraph[]
-    // 마이그레이션: 기존 유저의 default-linalg에 isTutorial 플래그 주입
-    return stored.map((g) =>
-      g.id === "default-linalg" && !g.isTutorial ? { ...g, isTutorial: true } : g
-    )
+    // 마이그레이션: seed 그래프에 isTutorial / institution 플래그 주입
+    return stored.map((g) => {
+      const seed = SEED_GRAPHS.find((s) => s.id === g.id)
+      if (!seed) return g
+      return {
+        ...g,
+        isTutorial: g.isTutorial ?? seed.isTutorial,
+        institution: g.institution ?? seed.institution,
+        instructorName: g.instructorName ?? seed.instructorName,
+      }
+    })
   } catch { return SEED_GRAPHS }
 }
 
@@ -133,7 +231,11 @@ export function saveGraph(graph: SavedGraph): void {
   } catch { /* ignore */ }
 }
 
-export function createGraph(domain: string, nodes: KnowledgeNode[]): SavedGraph {
+export function createGraph(
+  domain: string,
+  nodes: KnowledgeNode[],
+  opts?: { institution?: string; instructorName?: string }
+): SavedGraph {
   const graph: SavedGraph = {
     id: `graph-${Date.now()}`,
     domain,
@@ -142,6 +244,8 @@ export function createGraph(domain: string, nodes: KnowledgeNode[]): SavedGraph 
     analysisCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    ...(opts?.institution ? { institution: opts.institution } : {}),
+    ...(opts?.instructorName ? { instructorName: opts.instructorName } : {}),
   }
   saveGraph(graph)
   return graph
@@ -206,7 +310,7 @@ export function moveToTrash(id: string): void {
   if (!isClient()) return
   const graph = getGraph(id)
   if (!graph) return
-  if (graph.isTutorial) return   // 튜토리얼 그래프는 삭제 금지
+  if (!isGraphDeletable(graph)) return   // 튜토리얼·기관 발급(미폐지) 그래프는 삭제 금지
 
   // 그래프 목록에서 제거
   const all = getAllGraphs().filter((g) => g.id !== id)
@@ -264,61 +368,276 @@ export function emptyTrash(): void {
   localStorage.removeItem(TRASH_KEY)
 }
 
-// ── Error logs ─────────────────────────────────────────────────
+// ── Error logs (그래프별 스코핑) ───────────────────────────────
 
-export function getErrorLogs(): ErrorLog[] {
+function getAllErrorLogs(): ErrorLog[] {
   if (!isClient()) return []
   try {
     return JSON.parse(localStorage.getItem(ERROR_LOG_KEY) ?? "[]") as ErrorLog[]
   } catch { return [] }
 }
 
-/** 입력 시점에 저장하고 id 반환. 나중에 updateErrorLogResult로 결과 붙임. */
-export function saveErrorLog(text: string, domain: string): string {
+/** 특정 그래프의 오답 로그만 반환 */
+export function getErrorLogs(graphId: string): ErrorLog[] {
+  return getAllErrorLogs().filter((l) => l.graphId === graphId)
+}
+
+/** 입력 시점에 저장하고 id 반환. 그래프별로 격리. */
+export function saveErrorLog(text: string, domain: string, graphId: string): string {
   if (!isClient()) return ""
   const id = Date.now().toString()
   const log: ErrorLog = {
     id,
+    graphId,
     text: text.trim(),
     domain,
     savedAt: new Date().toISOString(),
   }
-  const all = [log, ...getErrorLogs()].slice(0, MAX_ERROR_LOGS)
-  localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(all))
+  const all = getAllErrorLogs()
+  // 현재 그래프의 로그만 limit 적용, 다른 그래프는 그대로 유지
+  const sameGraph = [log, ...all.filter((l) => l.graphId === graphId)].slice(0, MAX_ERROR_LOGS)
+  const otherGraphs = all.filter((l) => l.graphId !== graphId)
+  localStorage.setItem(ERROR_LOG_KEY, JSON.stringify([...sameGraph, ...otherGraphs]))
   return id
 }
 
-/** 분석 성공 후 결과를 기존 로그에 병합 */
+/** 분석 성공 후 결과를 기존 로그에 병합 (graphId 무관, id로 찾음) */
 export function updateErrorLogResult(id: string, result: AnalyzeErrorResponse): void {
   if (!isClient()) return
-  const all = getErrorLogs().map((l) => (l.id === id ? { ...l, result } : l))
+  const all = getAllErrorLogs().map((l) => (l.id === id ? { ...l, result } : l))
   localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(all))
 }
 
 export function deleteErrorLog(id: string): void {
   if (!isClient()) return
-  const all = getErrorLogs().filter((l) => l.id !== id)
+  const all = getAllErrorLogs().filter((l) => l.id !== id)
   localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(all))
 }
 
-// ── Recent analyses ────────────────────────────────────────────
+// ── Recent analyses (그래프별 스코핑) ──────────────────────────
 
-export function getRecentAnalyses(): StoredAnalysis[] {
+function getAllStoredAnalyses(): StoredAnalysis[] {
   if (!isClient()) return []
   try {
     return JSON.parse(localStorage.getItem(ANALYSIS_KEY) ?? "[]") as StoredAnalysis[]
   } catch { return [] }
 }
 
+/** 특정 그래프의 분석 기록만 반환 */
+export function getRecentAnalyses(graphId: string): StoredAnalysis[] {
+  return getAllStoredAnalyses().filter((a) => a.graphId === graphId)
+}
+
 export function saveRecentAnalysis(analysis: StoredAnalysis): void {
-  if (!isClient()) return
-  const all = [analysis, ...getRecentAnalyses().filter((a) => a.id !== analysis.id)]
+  if (!isClient() || !analysis.graphId) return
+  const all = getAllStoredAnalyses()
+  // 같은 그래프의 분석만 limit 적용
+  const sameGraph = [analysis, ...all.filter((a) => a.graphId === analysis.graphId && a.id !== analysis.id)]
     .slice(0, MAX_ANALYSES)
-  localStorage.setItem(ANALYSIS_KEY, JSON.stringify(all))
+  const otherGraphs = all.filter((a) => a.graphId !== analysis.graphId)
+  localStorage.setItem(ANALYSIS_KEY, JSON.stringify([...sameGraph, ...otherGraphs]))
 }
 
 export function deleteRecentAnalysis(id: string): void {
   if (!isClient()) return
-  const all = getRecentAnalyses().filter((a) => a.id !== id)
+  const all = getAllStoredAnalyses().filter((a) => a.id !== id)
   localStorage.setItem(ANALYSIS_KEY, JSON.stringify(all))
+}
+
+// ── 그래프 폐지 (교수측) ───────────────────────────────────────
+
+export function retireGraph(id: string): void {
+  if (!isClient()) return
+  const all = getAllGraphs()
+  const idx = all.findIndex((g) => g.id === id)
+  if (idx < 0) return
+  all[idx] = {
+    ...all[idx],
+    retired: true,
+    retiredAt: new Date().toISOString(),
+  }
+  localStorage.setItem(STORE_KEY, JSON.stringify(all))
+}
+
+export function unretireGraph(id: string): void {
+  if (!isClient()) return
+  const all = getAllGraphs()
+  const idx = all.findIndex((g) => g.id === id)
+  if (idx < 0) return
+  const { retired: _r, retiredAt: _ra, ...rest } = all[idx]
+  all[idx] = rest
+  localStorage.setItem(STORE_KEY, JSON.stringify(all))
+}
+
+// ── User-created classes (교수 직접 생성, 백엔드 미스왑) ──────
+
+export function getUserClasses(): UserClass[] {
+  if (!isClient()) return []
+  try {
+    return JSON.parse(localStorage.getItem(USER_CLASS_KEY) ?? "[]") as UserClass[]
+  } catch { return [] }
+}
+
+export function createUserClass(input: Omit<UserClass, "id" | "createdAt">): UserClass {
+  const cls: UserClass = {
+    ...input,
+    id: `user-class-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createdAt: new Date().toISOString(),
+  }
+  if (!isClient()) return cls
+  const all = [cls, ...getUserClasses()].slice(0, MAX_USER_CLASSES)
+  localStorage.setItem(USER_CLASS_KEY, JSON.stringify(all))
+  return cls
+}
+
+export function deleteUserClass(id: string): void {
+  if (!isClient()) return
+  const all = getUserClasses().filter((c) => c.id !== id)
+  localStorage.setItem(USER_CLASS_KEY, JSON.stringify(all))
+}
+
+// ── Live student weakness records (학생 → 교수 양방향 루프) ────
+
+export function getLiveStudentRecords(graphId?: string): LiveStudentRecord[] {
+  if (!isClient()) return []
+  try {
+    const all = JSON.parse(localStorage.getItem(LIVE_REC_KEY) ?? "[]") as LiveStudentRecord[]
+    return graphId ? all.filter((r) => r.graphId === graphId) : all
+  } catch { return [] }
+}
+
+export function recordStudentWeakness(input: {
+  graphId: string
+  concept: string
+  conceptNodeId: string
+}): LiveStudentRecord {
+  const rec: LiveStudentRecord = {
+    ...input,
+    id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    studentName: ANON_STUDENT_NAMES[Math.floor(Math.random() * ANON_STUDENT_NAMES.length)],
+    recordedAt: new Date().toISOString(),
+  }
+  if (!isClient()) return rec
+  const all = [rec, ...getLiveStudentRecords()].slice(0, MAX_LIVE_RECORDS)
+  localStorage.setItem(LIVE_REC_KEY, JSON.stringify(all))
+  return rec
+}
+
+export function clearLiveStudentRecords(): void {
+  if (!isClient()) return
+  localStorage.removeItem(LIVE_REC_KEY)
+}
+
+// ── Learning insights (학생 메타인지 대시보드) ─────────────────
+
+/**
+ * 분석 기록과 그래프 상태를 합쳐 학생용 메타인지 데이터 산출.
+ * frontierNode = 모든 prerequisite가 마스터되었지만 본인은 아직 모르는 노드 (학습 frontier).
+ */
+export function getLearningInsights(graph: SavedGraph): LearningInsights {
+  const analyses = getRecentAnalyses(graph.id)
+  const totalAnalyses = graph.analysisCount > 0 ? graph.analysisCount : analyses.length
+
+  // top 약점 — 분석 기록의 rootCauseNodeId를 빈도 카운트
+  const counts = new Map<string, { count: number; nodeId: string; concept: string }>()
+  analyses.forEach((a) => {
+    if (!a.rootCauseNodeId) return
+    const node = graph.nodes.find((n) => n.id === a.rootCauseNodeId)
+    if (!node) return
+    const prev = counts.get(node.label)
+    if (prev) prev.count += 1
+    else counts.set(node.label, { count: 1, nodeId: node.id, concept: node.label })
+  })
+  const topWeaknesses = Array.from(counts.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3)
+
+  // mastery
+  const masteryPct = graph.nodes.length === 0
+    ? 0
+    : Math.round((graph.masteredNodeIds.length / graph.nodes.length) * 100)
+
+  // frontier — 모든 prereq가 mastered, 본인은 not mastered
+  const masteredSet = new Set(graph.masteredNodeIds)
+  const frontierCandidates = graph.nodes
+    .filter((n) => !masteredSet.has(n.id))
+    .filter((n) => n.prerequisites.length > 0 && n.prerequisites.every((p) => masteredSet.has(p)))
+  const frontierNode = frontierCandidates[0]
+    ? {
+        id: frontierCandidates[0].id,
+        label: frontierCandidates[0].label,
+        description: frontierCandidates[0].description,
+      }
+    : null
+
+  // trend — 단순 휴리스틱: 분석 0 → new, mastery 50%↑ → up, else flat
+  const recentTrend: "up" | "flat" | "new" =
+    totalAnalyses === 0 ? "new" : masteryPct >= 50 ? "up" : "flat"
+
+  return { totalAnalyses, topWeaknesses, masteryPct, frontierNode, recentTrend }
+}
+
+// ── Notifications (교수 → 학생) ────────────────────────────────
+
+export function getNotifications(): Notification[] {
+  if (!isClient()) return []
+  try {
+    return JSON.parse(localStorage.getItem(NOTIF_KEY) ?? "[]") as Notification[]
+  } catch { return [] }
+}
+
+export function getUnreadNotificationCount(): number {
+  return getNotifications().filter((n) => !n.read).length
+}
+
+export function sendNotification(input: Omit<Notification, "id" | "sentAt" | "read">): Notification {
+  const notif: Notification = {
+    ...input,
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    sentAt: new Date().toISOString(),
+    read: false,
+  }
+  if (!isClient()) return notif
+  const all = [notif, ...getNotifications()].slice(0, MAX_NOTIFICATIONS)
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(all))
+  return notif
+}
+
+export function markNotificationRead(id: string): void {
+  if (!isClient()) return
+  const all = getNotifications().map((n) => (n.id === id ? { ...n, read: true } : n))
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(all))
+}
+
+export function markAllNotificationsRead(): void {
+  if (!isClient()) return
+  const all = getNotifications().map((n) => ({ ...n, read: true }))
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(all))
+}
+
+export function deleteNotification(id: string): void {
+  if (!isClient()) return
+  const all = getNotifications().filter((n) => n.id !== id)
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(all))
+}
+
+export function clearAllNotifications(): void {
+  if (!isClient()) return
+  localStorage.removeItem(NOTIF_KEY)
+}
+
+// ── 데모 전체 리셋 ─────────────────────────────────────────────
+
+/**
+ * 모든 `linker_*` 키 제거 → seed 상태로 복귀.
+ * 다음 getAllGraphs() 호출 시 SEED_GRAPHS가 자동 재주입된다.
+ */
+export function resetDemoState(): void {
+  if (!isClient()) return
+  const keys: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && k.startsWith("linker_")) keys.push(k)
+  }
+  keys.forEach((k) => localStorage.removeItem(k))
 }
