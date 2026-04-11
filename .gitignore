@@ -14,3 +14,10 @@ next.user-config.*
 node_modules
 .next/
 .DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# TypeScript build cache
+tsconfig.tsbuildinfo
