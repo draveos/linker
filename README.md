@@ -369,7 +369,10 @@ After :  루프 중엔 진단만 (100tok) · Content Gen은 최종 1회만 (800t
 
 ## 로드맵
 
-### v1 (현재 — 해커톤 제출본)
+### v1 — MVP 스코핑 전략
+
+현재 MVP는 localStorage 기반 단일 디바이스 아키텍처입니다. 이건 의도적인 선택입니다 — 핵심 가치인 결손 추적 알고리즘과 교수-학생 양방향 루프의 깊이를 먼저 검증하고 싶었기 때문입니다. `graph-store.ts`가 모든 데이터 접근을 추상화하고 있어서, 백엔드 swap은 인터페이스 교체만으로 가능한 구조입니다.
+
 - [x] Multi-Agent Harness (Proposer · Verifier · Content Gen)
 - [x] 학생/교수 듀얼 워크스페이스 + 양방향 데이터 루프
 - [x] 동적 지식 그래프 + 퀴즈 게이트
@@ -385,8 +388,11 @@ After :  루프 중엔 진단만 (100tok) · Content Gen은 최종 1회만 (800t
 - [x] 그래프 폐지 라이프사이클 (강좌 종료 → retire → 학생 알림)
 - [x] 데모 모드 (mock 5개 학급) ↔ 실사용 학급 통합 뷰
 
-### v2
-- [ ] Supabase 백엔드 (multi-device 동기화 · 실제 학생 데이터 · 다중 사용자)
+### v2 — 프로덕션 전환
+
+v1에서 핵심 가치(결손 추적 + 양방향 루프)가 검증되면, 다음 단계는 인프라 교체와 에이전트 확장입니다.
+
+- [ ] Supabase 백엔드 (multi-device 동기화 · 실제 학생 데이터 · 다중 사용자) — `graph-store.ts` 인터페이스 유지, 내부만 swap
 - [ ] WebSocket 또는 SSE로 탭 간 동기화 → 서버 푸시 동기화로 확장
 - [ ] Prompt Caching으로 추가 토큰 절감
 - [ ] Content Critic 에이전트 (마이크로 러닝 품질 검증)
@@ -408,9 +414,9 @@ After :  루프 중엔 진단만 (100tok) · Content Gen은 최종 1회만 (800t
 
 ## Built With Claude Code
 
-이 프로젝트는 Claude Code (Opus 4.6 · 1M context)와의 지속적인 페어 프로그래밍으로 개발되었습니다.
+이 프로젝트는 두 층위에서 AI를 활용했습니다.
 
-> 인간은 비전·판단·UX 결정을 담당하고, AI는 구현·타입 체크·트레이드오프 분석을 담당합니다. 단순 코드 생성기가 아닌 추론하는 페어로 활용한 것이 핵심이며, 전체 코드의 약 80%가 Claude Code로부터 생성/수정되었습니다.
+> 개발 과정에서는 Claude Code (Opus 4.6 · 1M context)와의 페어 프로그래밍으로 코드의 약 80%를 생성/수정했고, 제품 내부에서는 Multi-Agent Harness 패턴으로 단일 LLM 호출의 한계를 시스템 설계로 극복했습니다. 바이브코딩의 핵심은 AI를 *사용*하는 것이 아니라 AI 호출 자체를 *설계*하는 것이라는 관점이 양쪽 모두에 반영되어 있습니다.
 
 세션별 의사결정과 트레이드오프 논의는 [docs/ai-collaboration.md](docs/ai-collaboration.md)에 정리되어 있습니다.
 

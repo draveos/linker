@@ -180,10 +180,9 @@ export default function TeacherDashboard() {
   useEffect(() => {
     setMounted(true)
     if (typeof window !== "undefined") {
-      // 첫 방문 시 데모 모드를 자동 활성 — 예시 데이터를 기본 노출
+      // 예시 데이터는 명시적 버튼으로만 활성 — 자동 활성 하지 않음
       const stored = localStorage.getItem(DEMO_KEY)
-      const dm = stored === null ? true : stored === "true"
-      if (stored === null) localStorage.setItem(DEMO_KEY, "true")
+      const dm = stored === "true"
       setDemoMode(dm)
       refreshClasses(dm)
     }

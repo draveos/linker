@@ -1,11 +1,198 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { BrainCircuit, Eye, EyeOff, ArrowRight, ArrowLeft, User, GraduationCap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getUserRole, setUserRole, type UserRole } from "@/lib/graph-store"
+
+// ── Login Graph Animation ─────────────────────────────────────
+// 7초 루프: 노드 등장 → 엣지 연결 → 결손 감지(빨강 pulse) → 해결(초록) → 페이드 리셋
+
+const ANIM_NODES = [
+  { id: "a", label: "벡터",     cx: 70,  cy: 45  },
+  { id: "b", label: "행렬",     cx: 200, cy: 35  },
+  { id: "c", label: "행렬식",   cx: 135, cy: 110 },
+  { id: "d", label: "역행렬",   cx: 270, cy: 105 },
+  { id: "e", label: "고유값",   cx: 200, cy: 175 },
+]
+const ANIM_EDGES = [
+  { from: "a", to: "b" },
+  { from: "a", to: "c" },
+  { from: "b", to: "c" },
+  { from: "b", to: "d" },
+  { from: "c", to: "d" },
+  { from: "c", to: "e" },
+  { from: "d", to: "e" },
+]
+const TOTAL_MS = 7000
+const GAP_NODE = "c" // 결손 노드
+
+function easeOut(t: number) { return 1 - (1 - t) * (1 - t) }
+
+function LoginGraphAnimation() {
+  const [t, setT] = useState(0)
+
+  useEffect(() => {
+    const start = Date.now()
+    let raf: number
+    const tick = () => {
+      setT((Date.now() - start) % TOTAL_MS)
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const nodeMap = Object.fromEntries(ANIM_NODES.map(n => [n.id, n]))
+  const globalFade = t > 6200 ? Math.max(0, 1 - (t - 6200) / 800) : t < 300 ? t / 300 : 1
+
+  return (
+    <div className="relative w-full max-w-[380px] mx-auto" style={{ opacity: globalFade }}>
+      {/* Browser-like container */}
+      <div className="rounded-xl overflow-hidden border border-white/15 shadow-2xl shadow-black/20">
+        {/* Title bar */}
+        <div className="flex items-center gap-2 px-3.5 py-2.5 bg-[#1e1e2e] border-b border-white/5">
+          <div className="flex gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
+          </div>
+          <div className="flex-1 flex justify-center">
+            <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-md bg-white/5 text-[9px] text-white/40 font-mono">
+              linker / knowledge_graph
+            </div>
+          </div>
+        </div>
+
+        {/* Canvas area */}
+        <div className="bg-[#12121a] relative">
+          {/* Dot grid */}
+          <div
+            className="absolute inset-0 opacity-[0.08]"
+            style={{
+              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
+
+          <svg viewBox="0 0 340 210" className="relative w-full h-auto">
+            {/* 엣지 — 노드보다 먼저 렌더 (뒤에 깔림) */}
+            {ANIM_EDGES.map((e, i) => {
+              const startTime = 1000 + i * 280
+              const progress = t < startTime ? 0 : Math.min(1, (t - startTime) / 500)
+              if (progress <= 0) return null
+              const from = nodeMap[e.from]
+              const to = nodeMap[e.to]
+              const ex = from.cx + (to.cx - from.cx) * easeOut(progress)
+              const ey = from.cy + (to.cy - from.cy) * easeOut(progress)
+              const isGap = e.from === GAP_NODE || e.to === GAP_NODE
+              const inGapPhase = t >= 3200 && t < 4500
+              const inResolvePhase = t >= 4500
+              const color = isGap && inGapPhase
+                ? "rgba(239,68,68,0.6)"
+                : isGap && inResolvePhase
+                  ? "rgba(34,197,94,0.5)"
+                  : "rgba(148,163,184,0.2)"
+              return (
+                <line
+                  key={i}
+                  x1={from.cx} y1={from.cy}
+                  x2={ex} y2={ey}
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeLinecap="round"
+                />
+              )
+            })}
+
+            {/* 노드 — 솔리드 배경으로 엣지를 완전히 가림 */}
+            {ANIM_NODES.map((n, i) => {
+              const appearAt = i * 400
+              if (t < appearAt) return null
+              const enterProgress = Math.min(1, (t - appearAt) / 400)
+              const scale = 0.3 + 0.7 * easeOut(enterProgress)
+              const opacity = easeOut(enterProgress)
+
+              const isGap = n.id === GAP_NODE
+              const inGapPhase = t >= 3200 && t < 4500
+              const inResolvePhase = t >= 4500 && t < 5500
+              const inGlowPhase = t >= 5500
+
+              // 솔리드 컬러 — 엣지가 노드 뒤로 가려짐
+              let fillColor = "#1e1e2e"
+              let strokeColor = "rgba(148,163,184,0.5)"
+              let glowColor = "transparent"
+              let textColor = "rgba(226,232,240,0.9)"
+
+              if (isGap && inGapPhase) {
+                const pulse = 0.6 + 0.4 * Math.sin((t - 3200) / 150)
+                fillColor = "#2a1215"
+                strokeColor = `rgba(239,68,68,${0.7 * pulse})`
+                glowColor = `rgba(239,68,68,${0.3 * pulse})`
+                textColor = `rgba(252,165,165,${0.7 + 0.3 * pulse})`
+              } else if (isGap && inResolvePhase) {
+                const p = (t - 4500) / 1000
+                fillColor = "#122a1a"
+                strokeColor = `rgba(34,197,94,${0.6 + 0.3 * p})`
+                glowColor = `rgba(34,197,94,${0.25 * p})`
+                textColor = "rgba(187,247,208,0.95)"
+              } else if (isGap && inGlowPhase) {
+                fillColor = "#122a1a"
+                strokeColor = "rgba(34,197,94,0.85)"
+                glowColor = "rgba(34,197,94,0.25)"
+                textColor = "rgba(187,247,208,0.95)"
+              } else if (inGlowPhase) {
+                fillColor = "#1e1e2e"
+                strokeColor = "rgba(148,163,184,0.65)"
+              }
+
+              return (
+                <g key={n.id} style={{ opacity }} transform={`translate(${n.cx},${n.cy}) scale(${scale}) translate(${-n.cx},${-n.cy})`}>
+                  {/* outer glow */}
+                  <circle cx={n.cx} cy={n.cy} r={26} fill={glowColor} />
+                  {/* solid body — 엣지를 완전히 가림 */}
+                  <circle cx={n.cx} cy={n.cy} r={20} fill={fillColor} stroke={strokeColor} strokeWidth={1.5} />
+                  {/* label */}
+                  <text x={n.cx} y={n.cy + 4} textAnchor="middle" fill={textColor} style={{ fontSize: "10px", fontWeight: 600, letterSpacing: "0.02em" }}>
+                    {n.label}
+                  </text>
+                </g>
+              )
+            })}
+
+            {/* 결손 감지 라벨 */}
+            {t >= 3400 && t < 4500 && (
+              <g style={{ opacity: Math.min(1, (t - 3400) / 300) }}>
+                <rect x={nodeMap[GAP_NODE].cx - 35} y={nodeMap[GAP_NODE].cy + 26} width={70} height={18} rx={4} fill="rgba(239,68,68,0.9)" />
+                <text x={nodeMap[GAP_NODE].cx} y={nodeMap[GAP_NODE].cy + 39} textAnchor="middle" fill="white" style={{ fontSize: "9px", fontWeight: 700 }}>
+                  Gap Detected
+                </text>
+              </g>
+            )}
+
+            {/* 해결 라벨 */}
+            {t >= 4800 && t < 6200 && (
+              <g style={{ opacity: Math.min(1, (t - 4800) / 300) }}>
+                <rect x={nodeMap[GAP_NODE].cx - 30} y={nodeMap[GAP_NODE].cy + 26} width={60} height={18} rx={4} fill="rgba(34,197,94,0.9)" />
+                <text x={nodeMap[GAP_NODE].cx} y={nodeMap[GAP_NODE].cy + 39} textAnchor="middle" fill="white" style={{ fontSize: "9px", fontWeight: 700 }}>
+                  Resolved
+                </text>
+              </g>
+            )}
+          </svg>
+        </div>
+
+        {/* Status bar */}
+        <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#1e1e2e] border-t border-white/5">
+          <span className="text-[8px] text-white/25 font-mono">5 nodes · 7 edges</span>
+          <span className="text-[8px] text-white/25 font-mono">Linker v1</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -44,27 +231,34 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-background flex animate-in fade-in duration-500">
-      {/* Left panel — branding */}
-      <div className="hidden lg:flex flex-col w-1/2 bg-gradient-to-br from-primary to-primary/70 p-12 text-primary-foreground justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-white/20 rounded-xl">
-            <BrainCircuit className="h-6 w-6" />
+      {/* Left panel — 다크 테마 고정 (light/dark 모드 무관) */}
+      <div className="hidden lg:flex flex-col w-1/2 bg-[#0a0a12] p-12 text-white justify-between relative overflow-hidden">
+        {/* Ambient glow */}
+        <div className="absolute top-0 left-1/3 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[160px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[140px] pointer-events-none" />
+
+        <div className="relative flex items-center gap-2.5">
+          <div className="p-2 bg-primary/20 border border-primary/30 rounded-xl">
+            <BrainCircuit className="h-6 w-6 text-primary" />
           </div>
           <span className="text-2xl font-bold tracking-tight">Linker</span>
         </div>
 
-        <div className="space-y-4">
+        <div className="relative space-y-6">
           <h2 className="text-4xl font-bold leading-tight">
             학습 격차를<br />AI로 추적하세요.
           </h2>
-          <p className="text-primary-foreground/80 text-lg leading-relaxed">
+          <p className="text-white/60 text-lg leading-relaxed">
             지식 그래프가 당신의 오답을 분석하고<br />
             근본 원인을 찾아드립니다.
           </p>
+
+          {/* Knowledge Graph Animation */}
+          <LoginGraphAnimation />
         </div>
 
-        <div className="flex items-center gap-3 text-sm text-primary-foreground/70">
-          <div className="w-8 h-0.5 bg-primary-foreground/30 rounded-full" />
+        <div className="relative flex items-center gap-3 text-sm text-white/40">
+          <div className="w-8 h-0.5 bg-white/20 rounded-full" />
           AI-Powered Knowledge Graph Learning
         </div>
       </div>

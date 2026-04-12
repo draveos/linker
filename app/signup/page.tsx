@@ -40,25 +40,29 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen bg-background flex animate-in fade-in duration-500">
-      {/* Left panel */}
-      <div className="hidden lg:flex flex-col w-1/2 bg-gradient-to-br from-primary to-primary/70 p-12 text-primary-foreground justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-white/20 rounded-xl">
-            <BrainCircuit className="h-6 w-6" />
+      {/* Left panel — 다크 테마 고정 */}
+      <div className="hidden lg:flex flex-col w-1/2 bg-[#0a0a12] p-12 text-white justify-between relative overflow-hidden">
+        {/* Ambient glow */}
+        <div className="absolute top-1/4 left-0 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[160px] pointer-events-none" />
+        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-emerald-600/10 rounded-full blur-[140px] pointer-events-none" />
+
+        <div className="relative flex items-center gap-2.5">
+          <div className="p-2 bg-primary/20 border border-primary/30 rounded-xl">
+            <BrainCircuit className="h-6 w-6 text-primary" />
           </div>
           <span className="text-2xl font-bold tracking-tight">Linker</span>
         </div>
 
-        <div className="space-y-6">
+        <div className="relative space-y-6">
           <div className="space-y-3">
             <h2 className="text-4xl font-bold leading-tight">무엇이 포함되나요?</h2>
-            <p className="text-primary-foreground/80">지금 바로 무료로 시작하세요.</p>
+            <p className="text-white/60">지금 바로 무료로 시작하세요.</p>
           </div>
           <ul className="space-y-3">
             {perks.map((p) => (
-              <li key={p} className="flex items-center gap-3 text-sm">
-                <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                  <Check className="h-3 w-3" />
+              <li key={p} className="flex items-center gap-3 text-sm text-white/80">
+                <div className="w-5 h-5 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+                  <Check className="h-3 w-3 text-primary" />
                 </div>
                 {p}
               </li>
@@ -66,8 +70,8 @@ export default function SignupPage() {
           </ul>
         </div>
 
-        <div className="flex items-center gap-3 text-sm text-primary-foreground/70">
-          <div className="w-8 h-0.5 bg-primary-foreground/30 rounded-full" />
+        <div className="relative flex items-center gap-3 text-sm text-white/40">
+          <div className="w-8 h-0.5 bg-white/20 rounded-full" />
           Start Learning Smarter Today
         </div>
       </div>

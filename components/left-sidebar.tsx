@@ -145,29 +145,16 @@ export function LeftSidebar({
 
   return (
     <>
-      {/* Collapsed Toggle Button */}
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
+      {/* Sidebar + Toggle as a connected unit */}
+      <div
         className={cn(
-          "fixed top-4 z-30 p-2 bg-card border border-border rounded-lg shadow-lg transition-all duration-300",
-          "hover:opacity-100 opacity-60",
-          isCollapsed ? "left-4" : "left-[312px]"
+          "flex shrink-0 h-full transition-all duration-300 fixed md:relative z-20",
+          isCollapsed ? "-translate-x-80 md:-ml-80" : "translate-x-0"
         )}
       >
-        {isCollapsed ? (
-          <ChevronRight className="h-4 w-4 text-foreground" />
-        ) : (
-          <ChevronLeft className="h-4 w-4 text-foreground" />
-        )}
-      </button>
-
       {/* Sidebar */}
-      <aside
-        className={cn(
-          "w-80 border-r border-border bg-card flex flex-col h-full shrink-0 transition-all duration-300 fixed md:relative z-20",
-          isCollapsed ? "-translate-x-full md:-ml-80" : "translate-x-0"
-        )}
-      >
+      <aside className="w-80 border-r border-border bg-card flex flex-col h-full">
+
         {/* Header */}
         <div className="p-6 border-b border-border">
           <div className="flex items-center gap-3">
@@ -564,6 +551,20 @@ export function LeftSidebar({
           <p className="text-xs text-center text-muted-foreground">Powered by Claude AI</p>
         </div>
       </aside>
+
+        {/* Toggle tab — 사이드바 오른쪽 가장자리 중앙에 연결 */}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="self-center -ml-px w-6 h-14 flex items-center justify-center bg-card border border-l-0 border-border rounded-r-lg shadow-md hover:bg-muted transition-colors shrink-0"
+          aria-label={isCollapsed ? "사이드바 열기" : "사이드바 닫기"}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+        </button>
+      </div>
 
       {/* Mobile overlay */}
       {!isCollapsed && (

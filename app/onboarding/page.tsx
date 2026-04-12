@@ -173,8 +173,9 @@ function GraphVisual() {
           className="absolute inset-0 opacity-[0.35]"
           style={{
             backgroundImage:
-              "radial-gradient(circle, rgba(0,0,0,0.18) 1px, transparent 1px)",
+              "radial-gradient(circle, currentColor 1px, transparent 1px)",
             backgroundSize: "18px 18px",
+            color: "var(--muted-foreground)",
           }}
         />
 
@@ -202,7 +203,7 @@ function GraphVisual() {
         {visibleNodes.map((n) => (
           <div
             key={n.id}
-            className="absolute bg-white border-2 border-primary/70 rounded-xl px-3 py-1.5 text-xs font-semibold text-foreground shadow-md animate-in fade-in zoom-in-75 duration-500"
+            className="absolute bg-card border-2 border-primary/70 rounded-xl px-3 py-1.5 text-xs font-semibold text-foreground shadow-md animate-in fade-in zoom-in-75 duration-500"
             style={{
               left: `${n.x}px`,
               top: `${n.y}px`,
@@ -640,7 +641,7 @@ export default function OnboardingPage() {
   return (
     <div
       className={cn(
-        "h-screen flex flex-col overflow-hidden bg-background text-foreground relative transition-opacity duration-400",
+        "min-h-screen flex flex-col bg-background text-foreground relative transition-opacity duration-400",
         "animate-in fade-in duration-700",
         exiting ? "opacity-0" : "opacity-100"
       )}
@@ -676,7 +677,7 @@ export default function OnboardingPage() {
       </header>
 
       {/* ── Main: slide content + side arrows ── */}
-      <main className="flex-1 relative flex items-center justify-center px-20 md:px-28 min-h-0 overflow-hidden">
+      <main className="flex-1 relative flex items-center justify-center px-20 md:px-28 min-h-0 overflow-y-auto py-8">
         {/* Prev button — absolute inside main */}
         <button
           onClick={goPrev}

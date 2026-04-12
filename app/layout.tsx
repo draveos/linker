@@ -53,7 +53,17 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-      <html lang="en">
+      <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            if (localStorage.getItem('linker_theme') === 'dark' ||
+              (!localStorage.getItem('linker_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+              document.documentElement.classList.add('dark')
+            }
+          } catch {}
+        `}} />
+      </head>
       <body className="font-sans antialiased">
       {children}
       {process.env.NODE_ENV === 'production' && <Analytics />}

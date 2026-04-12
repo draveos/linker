@@ -5,7 +5,7 @@ import Link from "next/link"
 import {
   BrainCircuit, ArrowRight, Play, Grid3x3, Brain, BookOpen, Sparkles,
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Check, Bot, Shield, Zap,
-  TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Network,
+  TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Network, Moon, Sun,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -982,6 +982,18 @@ export default function LandingPage() {
             </Link>
 
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const next = !document.documentElement.classList.contains("dark")
+                  document.documentElement.classList.toggle("dark", next)
+                  localStorage.setItem("linker_theme", next ? "dark" : "light")
+                }}
+                className="w-8 h-8 rounded-lg border border-white/20 bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+                title="테마 전환"
+              >
+                <Moon className="h-3.5 w-3.5 dark:hidden" />
+                <Sun className="h-3.5 w-3.5 hidden dark:block" />
+              </button>
               <Link
                   href="/login"
                   className="text-sm text-white/70 hover:text-white transition-colors px-3 py-1.5"

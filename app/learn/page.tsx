@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { RotateCcw, X, AlertTriangle, Bell, ArrowLeft, GraduationCap, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -35,6 +35,14 @@ import {
 const DEFAULT_MASTERED = ["1", "2", "3"]
 
 export default function LearnPage() {
+  return (
+    <Suspense fallback={<div className="h-screen bg-background" />}>
+      <LearnPageInner />
+    </Suspense>
+  )
+}
+
+function LearnPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isTeacherMode = searchParams.get("teacher") === "true"
@@ -649,7 +657,7 @@ export default function LearnPage() {
               onClick={() => { setShowFeedbackPanel((v) => !v); refreshComments() }}
               className={cn(
                 "absolute right-4 z-30 w-auto rounded-xl border shadow-lg flex items-center gap-2 px-3 py-2 transition-all",
-                "top-[170px]",
+                "top-[200px]",
                 showFeedbackPanel
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-card/95 backdrop-blur-md border-border text-muted-foreground hover:text-primary hover:border-primary/40"
@@ -691,7 +699,7 @@ export default function LearnPage() {
             })
 
           return (
-            <div className="absolute top-[210px] right-4 z-30 w-80 max-h-[50vh] bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl flex flex-col animate-in fade-in slide-in-from-right-3 duration-200 overflow-hidden">
+            <div className="absolute top-[240px] right-4 z-30 w-80 max-h-[50vh] bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl flex flex-col animate-in fade-in slide-in-from-right-3 duration-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <GraduationCap className="h-3.5 w-3.5 text-primary" />

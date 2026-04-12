@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Plus, BrainCircuit, BookOpen, ChevronRight, Trash2, BarChart2,
   Clock, LogOut, Sparkles, Send, RotateCcw, AlertTriangle,
-  X, FileText, Network, GraduationCap, ArrowRight, Bell, Lock, Bookmark, Archive, Mail, Lightbulb, Target, Flame, FileDown,
+  X, FileText, Network, GraduationCap, ArrowRight, Bell, Lock, Bookmark, Archive, Mail, Lightbulb, Target, Flame, FileDown, Moon, Sun,
   Grid3x3, TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain,
   type LucideIcon,
 } from "lucide-react"
@@ -423,6 +423,18 @@ export default function HomePage() {
   const [bellPulse, setBellPulse] = useState(false)
   const [reportText, setReportText] = useState<string | null>(null)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+  const [isDark, setIsDark] = useState(false)
+
+  useEffect(() => {
+    setIsDark(document.documentElement.classList.contains("dark"))
+  }, [])
+
+  const toggleTheme = () => {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.classList.toggle("dark", next)
+    localStorage.setItem("linker_theme", next ? "dark" : "light")
+  }
   const initialNotifRef = useRef(true)
   const lastNotifIdRef = useRef<string | null>(null)
 
@@ -751,6 +763,13 @@ export default function HomePage() {
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary/50 flex items-center justify-center text-sm font-bold text-primary-foreground shadow-md shadow-primary/20">
               U
             </div>
+            <button
+              onClick={toggleTheme}
+              className="w-8 h-8 rounded-lg border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              title={isDark ? "라이트 모드" : "다크 모드"}
+            >
+              {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+            </button>
             <button onClick={handleLogout} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
               <LogOut className="h-3.5 w-3.5" />
               로그아웃
