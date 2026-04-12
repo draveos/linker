@@ -21,7 +21,7 @@ import ReactFlow, {
   BaseEdge,
 } from "reactflow"
 import "reactflow/dist/style.css"
-import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2, Info, Pencil } from "lucide-react"
+import { Check, AlertTriangle, Circle, Settings, Save, X, Plus, Sparkles, MessageCircle, Trash2, Info, Pencil, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
@@ -53,6 +53,10 @@ export interface KnowledgeNode {
   description: string
   prerequisites: string[]
   confidence?: number
+  // 교수/학생이 추가하는 학습 자료
+  content?: string          // 추가 학습 노트 (마크다운 텍스트)
+  videoUrl?: string         // 관련 강의 영상 링크
+  attachments?: string[]    // 외부 자료 링크 (PDF, 참고 페이지 등)
 }
 
 export interface SelectedNodeData {
@@ -1055,15 +1059,40 @@ export function KnowledgeGraphCanvas({
                   </Button>
                 </div>
             ) : (
-                <Button
-                    size="sm"
-                    variant="outline"
-                    className="bg-card/95 backdrop-blur-sm border-border shadow-lg w-fit"
-                    onClick={enterEditMode}
-                >
-                  <Settings className="h-4 w-4 mr-1" />
-                  수정 모드
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                      size="sm"
+                      variant="outline"
+                      className="bg-card/95 backdrop-blur-sm border-border shadow-lg"
+                      onClick={enterEditMode}
+                  >
+                    <Settings className="h-4 w-4 mr-1" />
+                    수정 모드
+                  </Button>
+                  <Button
+                      size="sm"
+                      variant="outline"
+                      className="bg-card/95 backdrop-blur-sm border-border shadow-lg"
+                      onClick={() => {
+                        const el = document.querySelector(".react-flow") as HTMLElement
+                        if (!el) return
+                        import("html-to-image").then(({ toPng }) => {
+                          toPng(el, { backgroundColor: "#fff", pixelRatio: 2 }).then((dataUrl) => {
+                            const a = document.createElement("a")
+                            a.href = dataUrl
+                            a.download = `${domain}-knowledge-graph.png`
+                            a.click()
+                          })
+                        }).catch(() => {
+                          // html-to-image 미설치 시 fallback: window.print
+                          window.print()
+                        })
+                      }}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    내보내기
+                  </Button>
+                </div>
             )}
           </div>
 

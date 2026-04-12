@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { MessageCircle, X, Send, BookOpen, HelpCircle, ChevronDown, History, AlertTriangle } from "lucide-react"
+import { MessageCircle, X, Send, BookOpen, HelpCircle, ChevronDown, History, AlertTriangle, ImagePlus, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { KnowledgeNode } from "@/components/knowledge-graph-canvas"
@@ -14,15 +14,16 @@ interface ChatbotProps {
 
 interface ChatLog {
   id: string
-  mode: "question" | "quiz"
+  mode: "question" | "quiz" | "recommend"
   messages: ChatMessage[]
   timestamp: Date
   preview: string
 }
 
-const WELCOME: Record<"question" | "quiz", string> = {
+const WELCOME: Record<"question" | "quiz" | "recommend", string> = {
   question: "안녕하세요! 그래프에 있는 개념에 대해 뭐든 물어보세요.",
   quiz: "문제풀이 모드입니다. 개념을 연습할 문제를 출제해드릴게요. 준비되셨나요?",
+  recommend: "자료를 기반으로 추가할 개념 노드를 추천해드립니다. 이미지나 텍스트를 보내주세요.",
 }
 
 const MAX_LOGS = 5
@@ -33,15 +34,17 @@ function formatTime(date: Date) {
 
 export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [mode, setMode] = useState<"question" | "quiz">("question")
+  const [mode, setMode] = useState<"question" | "quiz" | "recommend">("question")
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const [logs, setLogs] = useState<ChatLog[]>([])
   const [showLogSidebar, setShowLogSidebar] = useState(false)
+  const [chatImage, setChatImage] = useState<File | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const chatFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -51,7 +54,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
   }, [isOpen])
 
-  const saveToLog = useCallback((currentMode: "question" | "quiz", currentMessages: ChatMessage[]) => {
+  const saveToLog = useCallback((currentMode: "question" | "quiz" | "recommend" = mode, currentMessages: ChatMessage[] = messages) => {
     if (currentMessages.length === 0) return
     const firstUserMsg = currentMessages.find((m) => m.role === "user")
     if (!firstUserMsg) return
@@ -70,7 +73,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
     })
   }, [])
 
-  const handleModeSwitch = useCallback((newMode: "question" | "quiz") => {
+  const handleModeSwitch = useCallback((newMode: "question" | "quiz" | "recommend") => {
     if (newMode === mode) return
     saveToLog(mode, messages)
     setMode(newMode)
@@ -86,12 +89,29 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
   }, [mode, messages, saveToLog])
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isStreaming) return
+    const hasText = input.trim().length > 0
+    const hasImage = !!chatImage
+    if ((!hasText && !hasImage) || isStreaming) return
 
-    const userMsg: ChatMessage = { role: "user", content: input.trim() }
+    const msgText = hasText
+      ? input.trim()
+      : mode === "recommend"
+        ? `[이미지 첨부] 이 자료를 분석해서 추가할 개념 노드를 추천해주세요.`
+        : `[이미지 첨부]`
+    const userMsg: ChatMessage = { role: "user", content: msgText }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
     setIsStreaming(true)
+
+    // 이미지 → base64
+    let imageBase64: string | undefined
+    let imageMimeType: string | undefined
+    if (chatImage) {
+      imageMimeType = chatImage.type
+      const buf = await chatImage.arrayBuffer()
+      imageBase64 = btoa(new Uint8Array(buf).reduce((d, b) => d + String.fromCharCode(b), ""))
+      setChatImage(null)
+    }
 
     const allMessages = [...messages, userMsg]
     const assistantMsg: ChatMessage = { role: "assistant", content: "" }
@@ -108,6 +128,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
           domain: graphDomain,
           nodes: graphNodes.map((n) => ({ label: n.label, description: n.description })),
           mode,
+          ...(imageBase64 ? { imageBase64, imageMimeType } : {}),
         }),
         signal: abortRef.current.signal,
       })
@@ -137,7 +158,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
     } finally {
       setIsStreaming(false)
     }
-  }, [input, isStreaming, messages, graphDomain, graphNodes, mode])
+  }, [input, chatImage, isStreaming, messages, graphDomain, graphNodes, mode])
 
   const handleClose = () => {
     abortRef.current?.abort()
@@ -251,6 +272,16 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
                 <BookOpen className="h-3 w-3" />
                 문제풀이
               </button>
+              <button
+                onClick={() => handleModeSwitch("recommend")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                  mode === "recommend" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Sparkles className="h-3 w-3" />
+                노드 추천
+              </button>
             </div>
 
             <div className="flex items-center gap-1">
@@ -328,12 +359,56 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
           </div>
 
           {/* 입력창 */}
-          <div className="px-3 pb-3 pt-2 border-t border-border shrink-0">
-            <div className="flex gap-2">
+          <div className="px-3 pb-3 pt-2 border-t border-border shrink-0 space-y-2">
+            {/* 이미지 프리뷰 */}
+            {chatImage && (
+              <div className="relative rounded-lg border border-primary/30 overflow-hidden">
+                <img src={URL.createObjectURL(chatImage)} alt="" className="w-full max-h-24 object-contain bg-muted/30" />
+                <button
+                  onClick={() => setChatImage(null)}
+                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-card/90 border border-border flex items-center justify-center text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={chatFileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f && f.size <= 10 * 1024 * 1024) setChatImage(f)
+                e.target.value = ""
+              }}
+            />
+
+            <div
+              className="flex gap-1.5"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                const f = e.dataTransfer.files[0]
+                if (f && f.type.startsWith("image/") && f.size <= 10 * 1024 * 1024) setChatImage(f)
+              }}
+            >
+              <button
+                onClick={() => chatFileRef.current?.click()}
+                disabled={isStreaming}
+                className="h-8 w-8 shrink-0 rounded-xl border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-primary transition-colors disabled:opacity-40"
+                title="이미지/자료 첨부 (드래그도 가능)"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+              </button>
               <input
                 ref={inputRef}
                 type="text"
-                placeholder={mode === "question" ? "질문을 입력하세요..." : "답변을 입력하세요..."}
+                placeholder={
+                  mode === "recommend" ? "자료 설명 또는 이미지 첨부..." :
+                  mode === "question" ? "질문을 입력하세요..." : "답변을 입력하세요..."
+                }
                 className="flex-1 px-3 py-2 text-xs bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground/60"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -344,14 +419,31 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
                 size="icon"
                 className="h-8 w-8 shrink-0 rounded-xl"
                 onClick={handleSend}
-                disabled={!input.trim() || isStreaming}
+                disabled={(!input.trim() && !chatImage) || isStreaming}
               >
                 <Send className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
-              {graphDomain} 그래프 기반 응답
-            </p>
+
+            {/* 모드: 노드 추천 토글 */}
+            <div className="flex items-center justify-center gap-1">
+              <button
+                onClick={() => { if (mode !== "recommend") { saveToLog(); setMode("recommend"); setMessages([]) } else { saveToLog(); setMode("question"); setMessages([]) } }}
+                className={cn(
+                  "text-[10px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1",
+                  mode === "recommend"
+                    ? "bg-primary/15 text-primary font-semibold"
+                    : "text-muted-foreground/50 hover:text-primary"
+                )}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                노드 추천
+              </button>
+              <span className="text-[9px] text-muted-foreground/30">·</span>
+              <p className="text-[10px] text-muted-foreground/50">
+                {graphDomain}
+              </p>
+            </div>
           </div>
         </div>
       </div>

@@ -21,6 +21,8 @@ export interface GraphNode {
 export interface AnalyzeErrorRequest {
   errorText: string
   nodes: GraphNode[]
+  imageBase64?: string       // 이미지 오답 분석 — base64 인코딩
+  imageMimeType?: string     // image/png, image/jpeg 등
 }
 
 export interface AnalyzeErrorResponse {
@@ -128,10 +130,31 @@ function extractJSON<T>(text: string): T | null {
 
 // ── Agent 1: Light Proposer (진단만, 컨텐츠 생성 X) ────────────
 
+function buildUserContent(
+  prompt: string,
+  imageBase64?: string,
+  imageMimeType?: string
+): Anthropic.MessageCreateParams["messages"][0]["content"] {
+  if (!imageBase64 || !imageMimeType) return prompt
+  return [
+    {
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: imageMimeType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+        data: imageBase64,
+      },
+    },
+    { type: "text" as const, text: prompt },
+  ]
+}
+
 async function runLightProposer(
   errorText: string,
   nodes: GraphNode[],
-  critique?: string
+  critique?: string,
+  imageBase64?: string,
+  imageMimeType?: string
 ): Promise<LightProposal> {
   const critiqueBlock = critique
     ? `\n## 검증자 피드백 (시스템 내부 생성 — 반드시 반영)\n${critique}\n`
@@ -162,7 +185,7 @@ JSON만 반환 (다른 텍스트 금지):
   const msg = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 200,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
   const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
@@ -176,7 +199,9 @@ JSON만 반환 (다른 텍스트 금지):
 async function runVerifier(
   proposal: LightProposal,
   errorText: string,
-  nodes: GraphNode[]
+  nodes: GraphNode[],
+  imageBase64?: string,
+  imageMimeType?: string
 ): Promise<VerifyResult> {
   const proposedNode = nodes.find((n) => n.id === proposal.nodeId)
   const prereqInfo = proposedNode?.prerequisites
@@ -216,7 +241,7 @@ JSON만 반환:
   const msg = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 200,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
   const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
@@ -230,7 +255,9 @@ async function runContentGenerator(
   finalNodeId: string,
   finalNodeLabel: string,
   errorText: string,
-  nodes: GraphNode[]
+  nodes: GraphNode[],
+  imageBase64?: string,
+  imageMimeType?: string
 ): Promise<ContentResult> {
   const node = nodes.find((n) => n.id === finalNodeId)
 
@@ -272,7 +299,7 @@ JSON만 반환:
   const msg = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 800,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
   const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
@@ -312,15 +339,19 @@ export async function POST(req: NextRequest) {
   }
 
   const body: AnalyzeErrorRequest = await req.json().catch(() => ({ errorText: "", nodes: [] }))
-  const { errorText, nodes } = body
+  const { errorText, nodes, imageBase64, imageMimeType } = body
 
   // ── Input validation ──
-  const textCheck = validateText(errorText, LIMITS.errorText, "오답 입력")
-  if (!textCheck.ok) {
-    return new Response(
-      `data: ${JSON.stringify({ type: "error", message: textCheck.error })}\n\n`,
-      { status: 400, headers: { "Content-Type": "text/event-stream" } }
-    )
+  // 이미지가 첨부된 경우 텍스트는 비어있어도 OK ("이미지로 분석" 흐름)
+  const hasImage = !!imageBase64 && !!imageMimeType
+  if (!hasImage) {
+    const textCheck = validateText(errorText, LIMITS.errorText, "오답 입력")
+    if (!textCheck.ok) {
+      return new Response(
+        `data: ${JSON.stringify({ type: "error", message: textCheck.error })}\n\n`,
+        { status: 400, headers: { "Content-Type": "text/event-stream" } }
+      )
+    }
   }
   const nodesCheck = validateNodes(nodes)
   if (!nodesCheck.ok) {
@@ -359,7 +390,7 @@ export async function POST(req: NextRequest) {
           const stepLabel = round === 1 ? "근본 원인 추론 중..." : `재추론 중 (R${round})...`
           send({ type: "step", step: 2, label: stepLabel })
 
-          proposal = await runLightProposer(errorText, nodes, critique)
+          proposal = await runLightProposer(errorText, nodes, critique, imageBase64, imageMimeType)
 
           const proposerEntry: AgentTraceEntry = {
             role: "proposer",
@@ -405,7 +436,7 @@ export async function POST(req: NextRequest) {
 
           // ── Verifier 호출 ─────────────────────────────────
           send({ type: "step", step: 3, label: `AI 교차 검증 중 (R${round})...` })
-          const verify = await runVerifier(proposal, errorText, nodes)
+          const verify = await runVerifier(proposal, errorText, nodes, imageBase64, imageMimeType)
           verificationRounds++
 
           const verifierEntry: AgentTraceEntry = {
@@ -440,7 +471,7 @@ export async function POST(req: NextRequest) {
         // ── 최종 컨텐츠 생성 (1회만) ─────────────────────────
         send({ type: "step", step: 5, label: "학습 콘텐츠 생성 중..." })
         console.log(`\n📚 [ContentGenerator] 최종 노드: ${proposal.nodeLabel}`)
-        const content = await runContentGenerator(proposal.nodeId, proposal.nodeLabel, errorText, nodes)
+        const content = await runContentGenerator(proposal.nodeId, proposal.nodeLabel, errorText, nodes, imageBase64, imageMimeType)
 
         // ── 최종 결과 조립 ───────────────────────────────────
         const final: AnalyzeErrorResponse = {

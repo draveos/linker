@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useCallback, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
-import { RotateCcw, X, AlertTriangle, Bell } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { RotateCcw, X, AlertTriangle, Bell, ArrowLeft, GraduationCap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LeftSidebar, type Analysis } from "@/components/left-sidebar"
 import { KnowledgeGraphCanvas, type SelectedNodeData, type KnowledgeNode } from "@/components/knowledge-graph-canvas"
-import { RemedyPanel, type SelectedNode, type AiRemedyContent } from "@/components/remedy-panel"
+import { RemedyPanel, type SelectedNode, type AiRemedyContent, type NodeContentUpdate } from "@/components/remedy-panel"
 import { Chatbot } from "@/components/chatbot"
 import type { AnalyzeErrorResponse } from "@/app/api/analyze-error/route"
 import {
@@ -17,20 +17,25 @@ import {
   getRecentAnalyses,
   saveRecentAnalysis,
   recordStudentWeakness,
+  sendNotification,
   deleteRecentAnalysis,
   resetTutorialGraph,
   saveErrorLog,
   updateErrorLogResult,
   getNotifications,
+  getNodeComments,
   type SavedGraph,
   type ErrorLog,
   type Notification,
+  type NodeComment,
 } from "@/lib/graph-store"
 
 const DEFAULT_MASTERED = ["1", "2", "3"]
 
 export default function LearnPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isTeacherMode = searchParams.get("teacher") === "true"
   const [fading, setFading] = useState(false)
 
   // 그래프 상태
@@ -51,6 +56,26 @@ export default function LearnPage() {
 
   // 사용자 피드백 에러 메시지 (분석 실패 / 빈 그래프 등)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // 그래프 내 교수 피드백 패널
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false)
+  const [graphComments, setGraphComments] = useState<NodeComment[]>([])
+
+  const refreshComments = useCallback(() => {
+    setGraphComments(getNodeComments(activeGraphId))
+  }, [activeGraphId])
+
+  useEffect(() => { refreshComments() }, [refreshComments])
+
+  // 그래프 동기화 notice (교수 수정 시)
+  const [graphSyncToast, setGraphSyncToast] = useState<string | null>(null)
+  const graphNodesRef = useRef(graphNodes)
+  const savedPositionsRef = useRef(savedPositions)
+  const activeGraphIdRef = useRef(activeGraphId)
+  const syncFromStorageRef = useRef(false)   // storage 이벤트에서 온 변경 → debounced save 스킵
+  graphNodesRef.current = graphNodes
+  savedPositionsRef.current = savedPositions
+  activeGraphIdRef.current = activeGraphId
 
   // 교수 알림 라이브 토스트 (다른 탭/storage 이벤트 → 학생 학습 중에도 즉시 표시)
   const [incomingNotif, setIncomingNotif] = useState<Notification | null>(null)
@@ -74,10 +99,49 @@ export default function LearnPage() {
 
     const handler = (e: StorageEvent) => {
       if (e.key === "linker_notifications") checkNew()
+      if (e.key === "linker_node_comments") refreshComments()
+      // 교수가 다른 탭에서 그래프를 수정했을 때 → 자동 동기화 + notice
+      // activeGraphIdRef 사용 — 다른 탭의 activeGraphId 변경에 영향받지 않음
+      if (e.key === "linker_graphs") {
+        const id = activeGraphIdRef.current
+        if (id) {
+          const graphs = getAllGraphs()
+          const fresh = graphs.find((g: SavedGraph) => g.id === id)
+          if (fresh) {
+            const prevNodeCount = graphNodesRef.current.length
+            const structChanged = fresh.nodes.length !== prevNodeCount
+            // 동일 데이터면 무시 (ping-pong 방지)
+            const nodesMatch = fresh.nodes.length === prevNodeCount &&
+              fresh.nodes.every((n, i) => n.id === graphNodesRef.current[i]?.id && n.label === graphNodesRef.current[i]?.label)
+            if (nodesMatch && !structChanged) return
+
+            // refs 먼저 갱신 → 다음 비교가 stale 안 되게
+            graphNodesRef.current = fresh.nodes
+            if (fresh.nodePositions) savedPositionsRef.current = fresh.nodePositions
+
+            syncFromStorageRef.current = true  // debounced save 스킵 플래그
+            setGraphNodes(fresh.nodes)
+            setMasteredNodeIds(fresh.masteredNodeIds)
+            if (fresh.nodePositions) setSavedPositions(fresh.nodePositions)
+
+            // 변경 notice (한 번만)
+            if (structChanged) {
+              setGraphSyncToast(`그래프 구조가 업데이트되었습니다 (${fresh.nodes.length}개 개념)`)
+            }
+          }
+        }
+      }
     }
     window.addEventListener("storage", handler)
     return () => window.removeEventListener("storage", handler)
   }, [])
+
+  // 동기화 toast dismiss
+  useEffect(() => {
+    if (!graphSyncToast) return
+    const t = setTimeout(() => setGraphSyncToast(null), 5000)
+    return () => clearTimeout(t)
+  }, [graphSyncToast])
 
   // 토스트 자동 dismiss
   useEffect(() => {
@@ -99,6 +163,7 @@ export default function LearnPage() {
   const [analysisStep, setAnalysisStep] = useState(0)
   const [analysisStepLabels, setAnalysisStepLabels] = useState<string[]>([])
   const [inputText, setInputText] = useState("")
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [activeRootCause, setActiveRootCause] = useState<string | null>(null)
   const [aiContentMap, setAiContentMap] = useState<Record<string, AiRemedyContent>>({})
   const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([])
@@ -136,8 +201,12 @@ export default function LearnPage() {
     )
   }, [])
 
-  // masteredNodeIds 변경 시 debounce 저장
+  // masteredNodeIds 변경 시 debounce 저장 — storage sync에서 온 변경은 스킵 (ping-pong 방지)
   useEffect(() => {
+    if (syncFromStorageRef.current) {
+      syncFromStorageRef.current = false
+      return
+    }
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       const graphs = getAllGraphs()
@@ -145,15 +214,17 @@ export default function LearnPage() {
       if (found) saveGraph({ ...found, masteredNodeIds, nodes: graphNodes, domain: graphDomain })
     }, 500)
     return () => clearTimeout(saveTimerRef.current)
-  }, [masteredNodeIds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [masteredNodeIds, graphNodes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGoHome = useCallback(() => {
     setFading(true)
-    setTimeout(() => router.push("/home"), 350)
-  }, [router])
+    setTimeout(() => router.push(isTeacherMode ? "/teacher" : "/home"), 350)
+  }, [router, isTeacherMode])
 
   const handleAnalyze = useCallback(async () => {
-    if (!inputText.trim()) return
+    const hasText = inputText.trim().length > 0
+    const hasImage = !!imageFile
+    if (!hasText && !hasImage) return
 
     // Pre-check: 빈 그래프 — API 호출 전에 차단
     if (graphNodes.length === 0) {
@@ -166,17 +237,32 @@ export default function LearnPage() {
     setAnalysisStepLabels([])
     setSelectedNode(null)
     setActiveRootCause(null)
-    setRestoreSnapshot(null)   // 새 분석 시작 → 스냅샷 무효화
-    setErrorMessage(null)       // 이전 에러 클리어
+    setRestoreSnapshot(null)
+    setErrorMessage(null)
 
-    // 입력 시점에 로그 저장 (결과는 분석 완료 후 병합)
-    const logId = saveErrorLog(inputText, graphDomain, activeGraphId)
+    // 이미지 → base64 변환
+    let imageBase64: string | undefined
+    let imageMimeType: string | undefined
+    if (imageFile) {
+      imageMimeType = imageFile.type
+      const buf = await imageFile.arrayBuffer()
+      imageBase64 = btoa(
+        new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      )
+    }
+
+    const logText = hasText ? inputText : `[이미지 분석] ${imageFile?.name ?? ""}`
+    const logId = saveErrorLog(logText, graphDomain, activeGraphId)
 
     try {
       const response = await fetch("/api/analyze-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ errorText: inputText, nodes: graphNodes }),
+        body: JSON.stringify({
+          errorText: hasText ? inputText : "(이미지 첨부 — 이미지에서 오답 내용을 분석해주세요)",
+          nodes: graphNodes,
+          ...(imageBase64 ? { imageBase64, imageMimeType } : {}),
+        }),
       })
 
       if (!response.ok || !response.body) {
@@ -293,11 +379,20 @@ export default function LearnPage() {
           : "분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
       )
     }
-  }, [inputText, graphNodes, graphDomain, activeGraphId, masteredNodeIds])
+  }, [inputText, imageFile, graphNodes, graphDomain, activeGraphId, masteredNodeIds])
 
   const handleNodeClick = useCallback((node: SelectedNodeData) => {
-    setSelectedNode({ id: node.id, label: node.label, type: node.type, description: node.description })
-  }, [])
+    const kNode = graphNodes.find((n) => n.id === node.id)
+    setSelectedNode({
+      id: node.id,
+      label: node.label,
+      type: node.type,
+      description: node.description,
+      content: kNode?.content,
+      videoUrl: kNode?.videoUrl,
+      attachments: kNode?.attachments,
+    })
+  }, [graphNodes])
 
   const handleClosePanel = useCallback(() => setSelectedNode(null), [])
 
@@ -410,17 +505,85 @@ export default function LearnPage() {
       const graphs = getAllGraphs()
       const found = graphs.find((g: SavedGraph) => g.id === activeGraphId)
       if (found) {
+        // 교수 수정 시 학생의 masteredNodeIds 보호 — 삭제된 노드만 제거
+        const newNodeIds = new Set(newNodes.map((n) => n.id))
+        const safeMastered = masteredNodeIds.filter((mid) => newNodeIds.has(mid))
         saveGraph({
           ...found,
           nodes: newNodes,
           nodePositions: positions,
-          masteredNodeIds,
+          masteredNodeIds: safeMastered,
           domain: graphDomain,
         })
+        // 교수 모드에서 수정 시 학생에게 알림
+        if (isTeacherMode) {
+          const addedNodes = newNodes.filter((n) => !found.nodes.find((o) => o.id === n.id))
+          const removedNodes = found.nodes.filter((o) => !newNodes.find((n) => n.id === o.id))
+          if (addedNodes.length > 0 || removedNodes.length > 0) {
+            const parts: string[] = []
+            if (addedNodes.length > 0) parts.push(`"${addedNodes.map(n => n.label).join(", ")}" 개념 추가`)
+            if (removedNodes.length > 0) parts.push(`"${removedNodes.map(n => n.label).join(", ")}" 개념 삭제`)
+            sendNotification({
+              kind: "message",
+              title: "그래프 구조가 업데이트되었습니다",
+              body: parts.join(", ") + ". 그래프를 새로고침하면 반영됩니다.",
+              fromName: "김교수",
+              graphId: activeGraphId,
+            })
+          }
+        }
       }
     },
-    [activeGraphId, masteredNodeIds, graphDomain]
+    [activeGraphId, masteredNodeIds, graphDomain, isTeacherMode]
   )
+
+  const handleUpdateNode = useCallback((update: NodeContentUpdate) => {
+    setGraphNodes((prev) =>
+      prev.map((n) =>
+        n.id === update.nodeId
+          ? {
+              ...n,
+              description: update.description ?? n.description,
+              content: update.content,
+              videoUrl: update.videoUrl,
+              attachments: update.attachments,
+            }
+          : n
+      )
+    )
+    // selectedNode도 갱신
+    if (selectedNode?.id === update.nodeId) {
+      setSelectedNode((prev) =>
+        prev ? { ...prev, description: update.description ?? prev.description, content: update.content, videoUrl: update.videoUrl, attachments: update.attachments } : prev
+      )
+    }
+    // 즉시 localStorage에 persist
+    const graphs = getAllGraphs()
+    const found = graphs.find((g: SavedGraph) => g.id === activeGraphId)
+    if (found) {
+      const updatedNodes = found.nodes.map((n) =>
+        n.id === update.nodeId
+          ? { ...n, description: update.description ?? n.description, content: update.content, videoUrl: update.videoUrl, attachments: update.attachments }
+          : n
+      )
+      saveGraph({ ...found, nodes: updatedNodes })
+    }
+  }, [selectedNode?.id, activeGraphId])
+
+  // 키보드 단축키: Ctrl+Enter 분석, Escape 패널 닫기
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault()
+        if ((inputText.trim() || imageFile) && !isAnalyzing) handleAnalyze()
+      }
+      if (e.key === "Escape" && selectedNode) {
+        setSelectedNode(null)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [inputText, imageFile, isAnalyzing, handleAnalyze, selectedNode])
 
   return (
     <div className={cn(
@@ -431,6 +594,8 @@ export default function LearnPage() {
       <LeftSidebar
         inputText={inputText}
         setInputText={setInputText}
+        imageFile={imageFile}
+        setImageFile={setImageFile}
         isAnalyzing={isAnalyzing}
         analysisStep={analysisStep}
         onAnalyze={handleAnalyze}
@@ -445,7 +610,158 @@ export default function LearnPage() {
         onSelectErrorLog={handleSelectErrorLog}
       />
 
-      <main className="flex-1 h-full w-full min-w-0">
+      <main className="flex-1 h-full w-full min-w-0 relative">
+        {/* 교수 모드 배너 */}
+        {isTeacherMode && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-3 bg-card/95 backdrop-blur-md border border-primary/30 rounded-xl shadow-lg px-4 py-2.5">
+              <div className="p-1.5 bg-primary/15 border border-primary/30 rounded-lg">
+                <GraduationCap className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-primary">교수 모드</p>
+                <p className="text-[10px] text-muted-foreground">수정 시 학생들에게 자동 반영됩니다</p>
+              </div>
+              <button
+                onClick={handleGoHome}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted ml-2"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                대시보드
+              </button>
+            </div>
+          </div>
+        )}
+        {/* 그래프 내 피드백 알림 종 버튼 — legend 아래 배치 */}
+        {(() => {
+          const feedbackComments = isTeacherMode
+            ? graphComments.filter((c) => c.authorRole === "teacher")
+            : graphComments.filter((c) => c.authorRole === "teacher")
+          if (feedbackComments.length === 0) return null
+          return (
+            <button
+              onClick={() => { setShowFeedbackPanel((v) => !v); refreshComments() }}
+              className={cn(
+                "absolute right-4 z-30 w-auto rounded-xl border shadow-lg flex items-center gap-2 px-3 py-2 transition-all",
+                "top-[170px]",
+                showFeedbackPanel
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card/95 backdrop-blur-md border-border text-muted-foreground hover:text-primary hover:border-primary/40"
+              )}
+            >
+              <Bell className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-semibold">
+                {isTeacherMode ? "보낸 피드백" : "교수 피드백"}
+              </span>
+              <span className={cn(
+                "min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center",
+                showFeedbackPanel
+                  ? "bg-primary-foreground/20 text-primary-foreground"
+                  : "bg-rose-500 text-white"
+              )}>
+                {feedbackComments.length}
+              </span>
+            </button>
+          )
+        })()}
+
+        {/* 그래프 내 피드백 패널 — 노드별 대화 스레드 */}
+        {showFeedbackPanel && (() => {
+          // 노드별로 코멘트 그룹화 (시간순)
+          const byNode = new Map<string, NodeComment[]>()
+          graphComments
+            .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+            .forEach((c) => {
+              if (!byNode.has(c.nodeId)) byNode.set(c.nodeId, [])
+              byNode.get(c.nodeId)!.push(c)
+            })
+          // 교수 코멘트가 있는 노드만 표시
+          const threads = Array.from(byNode.entries())
+            .filter(([, msgs]) => msgs.some((m) => m.authorRole === "teacher"))
+            .sort((a, b) => {
+              const lastA = a[1][a[1].length - 1].timestamp
+              const lastB = b[1][b[1].length - 1].timestamp
+              return new Date(lastB).getTime() - new Date(lastA).getTime()
+            })
+
+          return (
+            <div className="absolute top-[210px] right-4 z-30 w-80 max-h-[50vh] bg-card/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl flex flex-col animate-in fade-in slide-in-from-right-3 duration-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-3.5 w-3.5 text-primary" />
+                  <p className="text-xs font-bold text-foreground">
+                    {isTeacherMode ? "학생에게 보낸 피드백" : "교수 피드백"}
+                  </p>
+                </div>
+                <button onClick={() => setShowFeedbackPanel(false)} className="p-1 text-muted-foreground hover:text-foreground rounded">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {threads.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">피드백이 없습니다.</div>
+                ) : (
+                  threads.map(([nodeId, msgs]) => {
+                    const node = graphNodes.find((n) => n.id === nodeId)
+                    return (
+                      <div key={nodeId} className="border-b border-border last:border-0">
+                        {/* 노드 헤더 — 클릭 시 노드 열기 */}
+                        <button
+                          onClick={() => {
+                            if (node) handleNodeClick({ id: node.id, label: node.label, type: "standard", description: node.description })
+                            setShowFeedbackPanel(false)
+                          }}
+                          className="w-full text-left px-4 py-2 bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-2"
+                        >
+                          <span className="text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                            {node?.label ?? nodeId}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground ml-auto">{msgs.length}개 메시지</span>
+                          <span className="text-[9px] text-primary">열기 →</span>
+                        </button>
+
+                        {/* 대화 스레드 */}
+                        <div className="px-4 py-2 space-y-1.5">
+                          {msgs.map((m) => (
+                            <div
+                              key={m.id}
+                              className={cn(
+                                "flex gap-2",
+                                m.authorRole === "teacher" ? "justify-start" : "justify-end"
+                              )}
+                            >
+                              <div className={cn(
+                                "max-w-[85%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed",
+                                m.authorRole === "teacher"
+                                  ? "bg-primary/10 text-foreground rounded-tl-sm"
+                                  : "bg-muted text-foreground rounded-tr-sm"
+                              )}>
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className={cn(
+                                    "text-[8px] font-bold",
+                                    m.authorRole === "teacher" ? "text-primary" : "text-muted-foreground"
+                                  )}>
+                                    {m.authorRole === "teacher" ? "교수" : "학생"}
+                                  </span>
+                                  <span className="text-[8px] text-muted-foreground/50">
+                                    {new Date(m.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                </div>
+                                {m.text}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         <KnowledgeGraphCanvas
           onNodeClick={handleNodeClick}
           selectedNodeId={selectedNode?.id}
@@ -467,48 +783,80 @@ export default function LearnPage() {
         onClose={handleClosePanel}
         aiContent={selectedNode ? (aiContentMap[selectedNode.id] ?? null) : null}
         onMarkMastered={handleMarkMastered}
+        onUpdateNode={handleUpdateNode}
+        graphId={activeGraphId}
+        isTeacherMode={isTeacherMode}
+        teacherName={isTeacherMode ? "김교수" : undefined}
       />
 
       <Chatbot graphNodes={graphNodes} graphDomain={graphDomain} />
 
-      {/* 교수 알림 라이브 토스트 (storage 이벤트로 도착) */}
-      {incomingNotif && (
-        <button
-          onClick={() => { setFading(true); setTimeout(() => router.push("/home"), 300) }}
-          className="fixed top-5 right-5 z-[100] max-w-sm text-left animate-in fade-in slide-in-from-top-4 duration-300"
-        >
-          <div className="bg-card border border-primary/40 rounded-2xl shadow-2xl shadow-primary/20 p-4 flex items-start gap-3 hover:border-primary transition-colors">
-            <div className="p-2 rounded-lg bg-primary/15 border border-primary/30 shrink-0">
-              <Bell className="h-3.5 w-3.5 text-primary" />
+      {/* 그래프 동기화 notice (교수 수정 시) */}
+      {graphSyncToast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-3 duration-300">
+          <div className="flex items-center gap-3 bg-card border border-primary/40 rounded-xl shadow-2xl px-4 py-3">
+            <div className="p-1.5 bg-primary/15 border border-primary/30 rounded-lg">
+              <GraduationCap className="h-3.5 w-3.5 text-primary" />
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                {incomingNotif.fromInstitution && (
-                  <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
-                    {incomingNotif.fromInstitution}
-                  </span>
-                )}
-                <span className="text-[9px] text-muted-foreground/70">방금 도착</span>
-              </div>
-              <p className="text-xs font-bold text-foreground line-clamp-1 mb-0.5">
-                {incomingNotif.title}
-              </p>
-              <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
-                {incomingNotif.body}
-              </p>
-              <p className="text-[9px] text-primary mt-1.5 font-semibold">
-                탭하여 알림함 열기 →
-              </p>
-            </div>
-            <span
-              onClick={(e) => { e.stopPropagation(); setIncomingNotif(null) }}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded shrink-0"
-            >
+            <p className="text-xs font-medium text-foreground">{graphSyncToast}</p>
+            <button onClick={() => setGraphSyncToast(null)} className="p-1 text-muted-foreground hover:text-foreground rounded">
               <X className="h-3 w-3" />
-            </span>
+            </button>
           </div>
-        </button>
+        </div>
       )}
+
+      {/* 교수 알림 라이브 토스트 — 현재 그래프 피드백은 인라인 처리, 다른 건 홈으로 */}
+      {incomingNotif && (() => {
+        const isCurrentGraph = incomingNotif.graphId === activeGraphId
+        const handleClick = () => {
+          if (isCurrentGraph) {
+            // 현재 그래프 관련이면 캔버스 내에서 처리 — 토스트만 닫기
+            setIncomingNotif(null)
+          } else {
+            // 다른 그래프면 홈으로
+            setFading(true)
+            setTimeout(() => router.push("/home"), 300)
+          }
+        }
+        return (
+          <button
+            onClick={handleClick}
+            className="fixed top-5 right-5 z-[100] max-w-sm text-left animate-in fade-in slide-in-from-top-4 duration-300"
+          >
+            <div className="bg-card border border-primary/40 rounded-2xl shadow-2xl shadow-primary/20 p-4 flex items-start gap-3 hover:border-primary transition-colors">
+              <div className="p-2 rounded-lg bg-primary/15 border border-primary/30 shrink-0">
+                <Bell className="h-3.5 w-3.5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  {incomingNotif.fromName && (
+                    <span className="text-[9px] font-bold text-primary uppercase tracking-wider">
+                      {incomingNotif.fromName}
+                    </span>
+                  )}
+                  <span className="text-[9px] text-muted-foreground/70">방금 도착</span>
+                </div>
+                <p className="text-xs font-bold text-foreground line-clamp-1 mb-0.5">
+                  {incomingNotif.title}
+                </p>
+                <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
+                  {incomingNotif.body}
+                </p>
+                <p className="text-[9px] text-primary mt-1.5 font-semibold">
+                  {isCurrentGraph ? "확인" : "탭하여 알림함 열기 →"}
+                </p>
+              </div>
+              <span
+                onClick={(e) => { e.stopPropagation(); setIncomingNotif(null) }}
+                className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded shrink-0"
+              >
+                <X className="h-3 w-3" />
+              </span>
+            </div>
+          </button>
+        )
+      })()}
 
       {/* 에러 토스트 — 빈 그래프, 분석 실패, rate limit 등 */}
       {errorMessage && (

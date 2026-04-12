@@ -253,14 +253,19 @@ export function createGraph(
 
 // ── Active graph ───────────────────────────────────────────────
 
+/**
+ * activeGraphId는 sessionStorage 사용 — 탭별로 격리.
+ * 탭 A(학생)와 탭 B(교수)가 서로 다른 그래프를 열어도 충돌하지 않음.
+ */
 export function getActiveGraphId(): string | null {
   if (!isClient()) return null
-  return localStorage.getItem(ACTIVE_KEY)
+  return sessionStorage.getItem(ACTIVE_KEY) ?? localStorage.getItem(ACTIVE_KEY)
 }
 
 export function setActiveGraphId(id: string): void {
   if (!isClient()) return
-  localStorage.setItem(ACTIVE_KEY, id)
+  sessionStorage.setItem(ACTIVE_KEY, id)
+  localStorage.setItem(ACTIVE_KEY, id)   // 새 탭 열 때 fallback
   // lastViewedAt 갱신
   const all = getAllGraphs()
   const idx = all.findIndex((g) => g.id === id)
@@ -272,6 +277,7 @@ export function setActiveGraphId(id: string): void {
 
 export function clearActiveGraphId(): void {
   if (!isClient()) return
+  sessionStorage.removeItem(ACTIVE_KEY)
   localStorage.removeItem(ACTIVE_KEY)
 }
 
@@ -624,6 +630,144 @@ export function deleteNotification(id: string): void {
 export function clearAllNotifications(): void {
   if (!isClient()) return
   localStorage.removeItem(NOTIF_KEY)
+}
+
+// ── 노드 코멘트 (교수 → 학생 피드백) ────────────────────────
+
+const COMMENT_KEY = "linker_node_comments"
+const MAX_COMMENTS_PER_NODE = 20
+
+export interface NodeComment {
+  id: string
+  nodeId: string
+  graphId: string
+  authorName: string
+  authorRole: "teacher" | "student"
+  text: string
+  timestamp: string
+}
+
+export function getNodeComments(graphId: string, nodeId?: string): NodeComment[] {
+  if (!isClient()) return []
+  try {
+    const all = JSON.parse(localStorage.getItem(COMMENT_KEY) ?? "[]") as NodeComment[]
+    const forGraph = all.filter((c) => c.graphId === graphId)
+    return nodeId ? forGraph.filter((c) => c.nodeId === nodeId) : forGraph
+  } catch { return [] }
+}
+
+export function addNodeComment(input: Omit<NodeComment, "id" | "timestamp">): NodeComment {
+  const comment: NodeComment = {
+    ...input,
+    id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    timestamp: new Date().toISOString(),
+  }
+  if (!isClient()) return comment
+  const all = JSON.parse(localStorage.getItem(COMMENT_KEY) ?? "[]") as NodeComment[]
+  // 같은 노드의 코멘트 수 제한
+  const sameNode = all.filter((c) => c.graphId === input.graphId && c.nodeId === input.nodeId)
+  const others = all.filter((c) => !(c.graphId === input.graphId && c.nodeId === input.nodeId))
+  const trimmed = [comment, ...sameNode].slice(0, MAX_COMMENTS_PER_NODE)
+  localStorage.setItem(COMMENT_KEY, JSON.stringify([...trimmed, ...others]))
+  return comment
+}
+
+export function getNodesWithComments(graphId: string): Set<string> {
+  const comments = getNodeComments(graphId)
+  return new Set(comments.map((c) => c.nodeId))
+}
+
+// ── 교수 제작 퀴즈 ─────────────────────────────────────────────
+
+const CUSTOM_QUIZ_KEY = "linker_custom_quizzes"
+
+export interface CustomQuiz {
+  id: string
+  graphId: string
+  nodeId: string
+  nodeLabel: string
+  question: string
+  options: string[]
+  answerIndex: number
+  createdBy: string
+  createdAt: string
+}
+
+export function getCustomQuizzes(graphId: string, nodeId?: string): CustomQuiz[] {
+  if (!isClient()) return []
+  try {
+    const all = JSON.parse(localStorage.getItem(CUSTOM_QUIZ_KEY) ?? "[]") as CustomQuiz[]
+    const forGraph = all.filter((q) => q.graphId === graphId)
+    return nodeId ? forGraph.filter((q) => q.nodeId === nodeId) : forGraph
+  } catch { return [] }
+}
+
+export function addCustomQuiz(input: Omit<CustomQuiz, "id" | "createdAt">): CustomQuiz {
+  const quiz: CustomQuiz = {
+    ...input,
+    id: `cquiz-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    createdAt: new Date().toISOString(),
+  }
+  if (!isClient()) return quiz
+  const all: CustomQuiz[] = [quiz, ...(JSON.parse(localStorage.getItem(CUSTOM_QUIZ_KEY) ?? "[]") as CustomQuiz[])]
+  localStorage.setItem(CUSTOM_QUIZ_KEY, JSON.stringify(all))
+  return quiz
+}
+
+export function deleteCustomQuiz(id: string): void {
+  if (!isClient()) return
+  try {
+    const all = JSON.parse(localStorage.getItem(CUSTOM_QUIZ_KEY) ?? "[]") as CustomQuiz[]
+    localStorage.setItem(CUSTOM_QUIZ_KEY, JSON.stringify(all.filter((q) => q.id !== id)))
+  } catch { /* ignore */ }
+}
+
+// ── 퀴즈 기록 (오답 노트) ─────────────────────────────────────
+
+const QUIZ_KEY = "linker_quiz_history"
+const MAX_QUIZ_HISTORY = 10
+
+export interface QuizAttempt {
+  id: string
+  graphId: string
+  nodeId: string
+  nodeLabel: string
+  question: string
+  options: string[]
+  selectedAnswer: number
+  correctAnswer: number
+  isCorrect: boolean
+  timestamp: string
+}
+
+export function getQuizHistory(graphId?: string): QuizAttempt[] {
+  if (!isClient()) return []
+  try {
+    const all = JSON.parse(localStorage.getItem(QUIZ_KEY) ?? "[]") as QuizAttempt[]
+    return graphId ? all.filter((q) => q.graphId === graphId) : all
+  } catch { return [] }
+}
+
+export function getWrongAnswers(graphId?: string): QuizAttempt[] {
+  return getQuizHistory(graphId).filter((q) => !q.isCorrect)
+}
+
+export function saveQuizAttempt(attempt: Omit<QuizAttempt, "id" | "timestamp">): QuizAttempt {
+  const full: QuizAttempt = {
+    ...attempt,
+    id: `quiz-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    timestamp: new Date().toISOString(),
+  }
+  if (!isClient()) return full
+  const all = [full, ...getQuizHistory()].slice(0, MAX_QUIZ_HISTORY)
+  localStorage.setItem(QUIZ_KEY, JSON.stringify(all))
+  return full
+}
+
+export function getNodeQuizStats(graphId: string, nodeId: string): { total: number; correct: number; wrong: number } {
+  const attempts = getQuizHistory(graphId).filter((q) => q.nodeId === nodeId)
+  const correct = attempts.filter((q) => q.isCorrect).length
+  return { total: attempts.length, correct, wrong: attempts.length - correct }
 }
 
 // ── 데모 전체 리셋 ─────────────────────────────────────────────

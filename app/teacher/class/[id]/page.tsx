@@ -6,11 +6,11 @@ import {
   BrainCircuit, ArrowLeft, Users, TrendingUp, AlertTriangle, Sparkles,
   Clock, BookOpen, LogOut, User, GraduationCap,
   Grid3x3, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain, Network,
-  Check, X, Send, Bell, Zap, Archive, RotateCcw,
+  Check, X, Send, Bell, Zap, Archive, RotateCcw, Eye,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { setUserRole, sendNotification, getGraph, retireGraph, unretireGraph, getLiveStudentRecords, type SavedGraph, type LiveStudentRecord } from "@/lib/graph-store"
+import { setUserRole, sendNotification, getGraph, retireGraph, unretireGraph, getLiveStudentRecords, setActiveGraphId, getQuizHistory, type SavedGraph, type LiveStudentRecord, type QuizAttempt } from "@/lib/graph-store"
 import { getMockClass, TEACHER_INFO, type MockClass } from "@/lib/mock-classes"
 
 // ── Domain theme map ──
@@ -96,6 +96,11 @@ export default function ClassDetailPage({
   const [liveRecords, setLiveRecords] = useState<LiveStudentRecord[]>([])
   const [highlightedConcept, setHighlightedConcept] = useState<string | null>(null)
 
+  // 교수용 퀴즈 팝업 + 학생 그래프 보기
+  const [activeQuiz, setActiveQuiz] = useState<QuizAttempt | null>(null)
+  const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>([])
+  const [showQuizPanel, setShowQuizPanel] = useState(false)
+
   useEffect(() => { setMounted(true) }, [])
 
   // cls는 client-only state — SSR에서는 localStorage 접근 불가
@@ -141,6 +146,12 @@ export default function ClassDetailPage({
     }
     window.addEventListener("storage", handler)
     return () => window.removeEventListener("storage", handler)
+  }, [cls])
+
+  // 퀴즈 기록 로드
+  useEffect(() => {
+    if (!cls?.linkedGraphId) return
+    setQuizHistory(getQuizHistory(cls.linkedGraphId))
   }, [cls])
 
   // 라이브 결손 기록 + mock weak points 병합
@@ -252,12 +263,20 @@ export default function ClassDetailPage({
     setPendingRetire(null)
   }
 
+  const handleViewGraph = () => {
+    if (!cls?.linkedGraphId) return
+    setActiveGraphId(cls.linkedGraphId)
+    setFading(true)
+    setTimeout(() => router.push("/learn?teacher=true"), 300)
+  }
+
   const handleBack = () => {
     setFading(true)
     setTimeout(() => router.push("/teacher"), 300)
   }
 
   const handleSwitchToStudent = () => {
+    if (!confirm("학생 모드로 전환합니다. 학생 홈으로 이동합니다.")) return
     setUserRole("student")
     setFading(true)
     setTimeout(() => router.push("/home"), 300)
@@ -376,15 +395,15 @@ export default function ClassDetailPage({
             {/* Decorative */}
             <div className={cn("absolute -top-20 -right-20 w-80 h-80 rounded-full blur-3xl opacity-30", t.bar)} />
 
-            <div className="relative flex items-start gap-6">
+            <div className="relative flex items-start gap-8">
               {/* Icon */}
-              <div className="relative flex items-center justify-center shrink-0">
-                <div className="absolute w-24 h-24 rounded-2xl bg-white/70 dark:bg-white/10 backdrop-blur-md border border-white/50 shadow-lg shadow-black/5" />
-                <Icon className={cn("relative h-14 w-14", t.icon)} strokeWidth={1.75} />
+              <div className="relative flex items-center justify-center shrink-0 w-24 h-24">
+                <div className="absolute inset-0 rounded-2xl bg-white/70 dark:bg-white/10 backdrop-blur-md border border-white/50 shadow-lg shadow-black/5" />
+                <Icon className={cn("relative h-12 w-12", t.icon)} strokeWidth={1.75} />
               </div>
 
               {/* Info */}
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 pt-1">
                 <p className="text-[11px] font-semibold text-primary uppercase tracking-[0.15em] mb-2">
                   CLASS OVERVIEW
                 </p>
@@ -424,11 +443,72 @@ export default function ClassDetailPage({
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 uppercase tracking-wider">분석/주</p>
                   </div>
+
+                  {/* 그래프 보기 + 오답 확인 */}
+                  {cls.linkedGraphId && (
+                    <>
+                      <div className="h-8 w-px bg-border" />
+                      <button
+                        onClick={handleViewGraph}
+                        className="flex items-center gap-1.5 text-xs text-primary font-semibold hover:text-primary/80 transition-colors"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        그래프 보기
+                      </button>
+                      {quizHistory.length > 0 && (
+                        <button
+                          onClick={() => setShowQuizPanel((v) => !v)}
+                          className={cn(
+                            "flex items-center gap-1.5 text-xs font-semibold transition-colors",
+                            showQuizPanel ? "text-amber-600" : "text-muted-foreground hover:text-amber-600"
+                          )}
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          오답 {quizHistory.filter(q => !q.isCorrect).length}건
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        {/* 학생 오답 기록 (교수용) */}
+        {showQuizPanel && quizHistory.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-5">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <h2 className="text-xl font-bold text-foreground">학생 퀴즈 기록</h2>
+              <span className="text-xs text-muted-foreground ml-1">{quizHistory.length}건</span>
+            </div>
+            <div className="bg-card border border-border rounded-2xl divide-y divide-border max-h-72 overflow-y-auto">
+              {quizHistory.slice(0, 10).map((q) => (
+                <button
+                  key={q.id}
+                  onClick={() => setActiveQuiz(q)}
+                  className="w-full text-left px-5 py-3 hover:bg-muted/20 transition-colors flex items-center gap-3 group"
+                >
+                  <div className={cn(
+                    "w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0",
+                    q.isCorrect ? "bg-emerald-500/15 text-emerald-600" : "bg-red-500/15 text-red-600"
+                  )}>
+                    {q.isCorrect ? "O" : "X"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-bold text-amber-600 bg-amber-500/15 px-1.5 py-0.5 rounded">{q.nodeLabel}</span>
+                      <span className="text-[9px] text-muted-foreground">{timeAgo(q.timestamp)}</span>
+                    </div>
+                    <p className="text-xs text-foreground line-clamp-1 mt-0.5">{q.question}</p>
+                  </div>
+                  <span className="text-[9px] text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0">상세 →</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Weakness heatmap with live updates */}
         <div>
@@ -929,6 +1009,77 @@ export default function ClassDetailPage({
                 {pendingRetire === "retire"
                   ? <><Archive className="h-3.5 w-3.5" /> 폐지 확정</>
                   : <><RotateCcw className="h-3.5 w-3.5" /> 폐지 취소</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 교수용 퀴즈 상세 팝업 */}
+      {activeQuiz && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setActiveQuiz(null)} />
+          <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={cn(
+              "px-6 py-4 border-b border-border bg-gradient-to-br",
+              activeQuiz.isCorrect ? "from-emerald-500/10 to-transparent" : "from-amber-500/10 to-transparent"
+            )}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-bold text-amber-600 bg-amber-500/15 px-2 py-0.5 rounded-full">{activeQuiz.nodeLabel}</span>
+                    <span className={cn(
+                      "text-[9px] font-bold px-2 py-0.5 rounded-full",
+                      activeQuiz.isCorrect ? "bg-emerald-500/15 text-emerald-600" : "bg-red-500/15 text-red-600"
+                    )}>
+                      {activeQuiz.isCorrect ? "정답" : "오답"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {new Date(activeQuiz.timestamp).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button onClick={() => setActiveQuiz(null)} className="p-1 text-muted-foreground hover:text-foreground rounded">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm font-semibold text-foreground leading-relaxed">{activeQuiz.question}</p>
+              <div className="space-y-2">
+                {activeQuiz.options.map((opt, idx) => {
+                  const letter = String.fromCharCode(65 + idx)
+                  const isCorrect = idx === activeQuiz.correctAnswer
+                  const isSelected = idx === activeQuiz.selectedAnswer
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "flex items-start gap-2.5 px-3 py-2.5 rounded-xl border-2 text-sm",
+                        isCorrect && "border-green-500/50 bg-green-50 dark:bg-green-950/20",
+                        isSelected && !isCorrect && "border-red-500/50 bg-red-50 dark:bg-red-950/20",
+                        !isCorrect && !isSelected && "border-border bg-muted/20"
+                      )}
+                    >
+                      <span className={cn(
+                        "w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0",
+                        isCorrect && "bg-green-500 text-white",
+                        isSelected && !isCorrect && "bg-red-500 text-white",
+                        !isCorrect && !isSelected && "bg-muted text-muted-foreground"
+                      )}>{letter}</span>
+                      <span className="flex-1 text-foreground">{opt}</span>
+                      {isCorrect && <span className="text-[9px] font-bold text-green-600 shrink-0">정답</span>}
+                      {isSelected && !isCorrect && <span className="text-[9px] font-bold text-red-500 shrink-0">학생 선택</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="px-6 py-3 border-t border-border bg-muted/20">
+              <button onClick={() => setActiveQuiz(null)} className="w-full h-9 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                닫기
               </button>
             </div>
           </div>

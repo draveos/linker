@@ -138,7 +138,7 @@ vercel env add ANTHROPIC_API_KEY    # Production / Preview / Development 모두
 vercel --prod
 ```
 
-> Vercel 설정 주의: `analyze-error` API 라우트는 `maxDuration = 60`을 사용합니다 (멀티 에이전트 루프가 기본 10초를 넘을 수 있음).
+> Vercel 설정 주의: SSE 스트리밍 라우트 (`analyze-error`, `chat`)는 `maxDuration = 60`을 사용합니다 (멀티 에이전트 루프 / 긴 챗 응답이 기본 10초를 넘을 수 있음).
 
 ---
 

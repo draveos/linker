@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Sparkles, Clock, BookOpen, BrainCircuit, Info, ChevronLeft, ChevronRight, Trash2, Home, History, Zap, RefreshCcw, GraduationCap } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Sparkles, Clock, BookOpen, BrainCircuit, Info, ChevronLeft, ChevronRight, Trash2, Home, History, Zap, RefreshCcw, GraduationCap, ImagePlus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { getErrorLogs, deleteErrorLog, type ErrorLog } from "@/lib/graph-store"
+import { getErrorLogs, deleteErrorLog, getWrongAnswers, type ErrorLog, type QuizAttempt } from "@/lib/graph-store"
 import { AlertCircle, Target } from "lucide-react"
 
 export interface Analysis {
@@ -22,6 +22,9 @@ interface LeftSidebarProps {
   isAnalyzing: boolean
   analysisStep?: number
   onAnalyze: () => void
+  // 이미지 오답 분석
+  imageFile: File | null
+  setImageFile: (file: File | null) => void
   recentAnalyses: Analysis[]
   onSelectAnalysis: (analysis: Analysis) => void
   onDeleteAnalysis: (id: string) => void
@@ -41,6 +44,8 @@ export function LeftSidebar({
   isAnalyzing,
   analysisStep,
   onAnalyze,
+  imageFile,
+  setImageFile,
   recentAnalyses,
   onSelectAnalysis,
   onDeleteAnalysis,
@@ -52,12 +57,25 @@ export function LeftSidebar({
   onSelectErrorLog,
 }: LeftSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [showWrongAnswers, setShowWrongAnswers] = useState(false)
+  const [wrongAnswers, setWrongAnswers] = useState<QuizAttempt[]>([])
+  const [activeQuiz, setActiveQuiz] = useState<QuizAttempt | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragCounter = useRef(0)
+
+  const handleDragFile = (file: File) => {
+    if (file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024) {
+      setImageFile(file)
+    }
+  }
   const [showLogs, setShowLogs] = useState(false)
   const [errorLogs, setErrorLogs] = useState<ErrorLog[]>([])
   const [resetConfirm, setResetConfirm] = useState(false)
 
   useEffect(() => {
     setErrorLogs(getErrorLogs(graphId))
+    setWrongAnswers(getWrongAnswers(graphId))
   }, [graphId])
 
   // 패널 열릴 때마다 최신 로그 로드 (학습 페이지에서 분석 결과가 업데이트된 후 반영)
@@ -161,9 +179,25 @@ export function LeftSidebar({
               <p className="text-xs text-muted-foreground font-medium">AI 기반 오답 역추적 학습</p>
             </div>
             <div className="flex items-center gap-1">
+              {/* 오답 노트 토글 */}
+              <button
+                onClick={() => { setShowWrongAnswers((v) => !v); setShowLogs(false); setWrongAnswers(getWrongAnswers(graphId)) }}
+                className={cn(
+                  "p-2 rounded-lg transition-colors relative",
+                  showWrongAnswers ? "bg-amber-500/10 text-amber-600" : "hover:bg-muted text-muted-foreground"
+                )}
+                title="오답 노트"
+              >
+                <AlertCircle className="h-4 w-4" />
+                {wrongAnswers.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-amber-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                    {Math.min(wrongAnswers.length, 9)}
+                  </span>
+                )}
+              </button>
               {/* 오답 로그 토글 */}
               <button
-                onClick={() => setShowLogs((v) => !v)}
+                onClick={() => { setShowLogs((v) => !v); setShowWrongAnswers(false) }}
                 className={cn(
                   "p-2 rounded-lg transition-colors relative",
                   showLogs ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground"
@@ -192,7 +226,43 @@ export function LeftSidebar({
 
         {/* Content */}
         <div className="flex-1 overflow-auto">
-          {showLogs ? (
+          {showWrongAnswers ? (
+            /* ── 오답 노트 패널 ── */
+            <div className="p-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-foreground">오답 노트</h2>
+                <span className="text-xs text-muted-foreground">{wrongAnswers.length}개</span>
+              </div>
+              {wrongAnswers.length === 0 ? (
+                <div className="py-8 text-center">
+                  <AlertCircle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground">틀린 퀴즈가 없습니다.</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">노드를 클릭하고 퀴즈를 풀어보세요.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {wrongAnswers.slice(0, 10).map((q) => (
+                    <button
+                      key={q.id}
+                      onClick={() => setActiveQuiz(q)}
+                      className="w-full text-left p-3 rounded-xl border border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/10 hover:border-amber-500/40 hover:shadow-sm transition-all space-y-1"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-amber-600 bg-amber-500/15 px-1.5 py-0.5 rounded">
+                          {q.nodeLabel}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground ml-auto">
+                          {new Date(q.timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-foreground leading-relaxed line-clamp-2">{q.question}</p>
+                      <p className="text-[9px] text-primary">탭하여 상세 보기 →</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : showLogs ? (
             /* ── 오답 입력 로그 패널 ── */
             <div className="p-6 space-y-3">
               <div className="flex items-center justify-between">
@@ -346,17 +416,82 @@ export function LeftSidebar({
                 </div>
               )}
 
-              <Textarea
-                placeholder="예시: 행렬 A = [[1,2],[3,4]]의 역행렬을 구했는데 [[4,-2],[-3,1]]이 나왔습니다. 그런데 답이 틀렸다고 합니다..."
-                className="min-h-[140px] resize-none text-sm bg-background border-border focus:ring-primary placeholder:text-muted-foreground/60"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+              {/* 드래그 앤 드롭 영역 */}
+              <div
+                className={cn(
+                  "relative rounded-xl transition-colors",
+                  isDragging && "ring-2 ring-primary ring-offset-2"
+                )}
+                onDragEnter={(e) => { e.preventDefault(); dragCounter.current++; setIsDragging(true) }}
+                onDragLeave={(e) => { e.preventDefault(); dragCounter.current--; if (dragCounter.current <= 0) { setIsDragging(false); dragCounter.current = 0 } }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault(); setIsDragging(false); dragCounter.current = 0
+                  const f = e.dataTransfer.files[0]
+                  if (f) handleDragFile(f)
+                }}
+              >
+                {isDragging && (
+                  <div className="absolute inset-0 z-10 bg-primary/10 border-2 border-dashed border-primary rounded-xl flex items-center justify-center">
+                    <p className="text-xs font-semibold text-primary">이미지를 여기에 놓으세요</p>
+                  </div>
+                )}
+                <Textarea
+                  placeholder={imageFile
+                    ? "(선택사항) 이미지에 대한 추가 설명을 입력하세요..."
+                    : "오답 텍스트를 입력하거나, 문제 이미지를 드래그/첨부할 수 있습니다.\n\n예시: 행렬 A = [[1,2],[3,4]]의 역행렬을 구했는데 [[4,-2],[-3,1]]이 나왔습니다..."
+                  }
+                  className="min-h-[140px] resize-none text-sm bg-background border-border focus:ring-primary placeholder:text-muted-foreground/60"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                />
+              </div>
+
+              {/* 이미지 업로드 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f && f.size <= 10 * 1024 * 1024) setImageFile(f)
+                  e.target.value = ""
+                }}
               />
+
+              {imageFile ? (
+                <div className="relative rounded-xl border border-primary/30 overflow-hidden bg-muted/30">
+                  <img
+                    src={URL.createObjectURL(imageFile)}
+                    alt="업로드된 문제"
+                    className="w-full max-h-48 object-contain"
+                  />
+                  <button
+                    onClick={() => setImageFile(null)}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-card/90 backdrop-blur border border-border flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <div className="px-3 py-1.5 text-[10px] text-primary font-medium bg-primary/5 border-t border-primary/20">
+                    📎 {imageFile.name} ({(imageFile.size / 1024).toFixed(0)}KB)
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAnalyzing}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-border hover:border-primary/40 text-muted-foreground hover:text-primary text-xs transition-all disabled:opacity-50"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  문제 이미지 첨부 (사진/캡처)
+                </button>
+              )}
 
               <Button
                 className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25 font-medium"
                 onClick={handleAnalyze}
-                disabled={isAnalyzing || !inputText.trim()}
+                disabled={isAnalyzing || (!inputText.trim() && !imageFile)}
               >
                 {isAnalyzing ? (
                   <>
@@ -435,6 +570,72 @@ export function LeftSidebar({
           className="fixed inset-0 bg-black/20 z-10 md:hidden"
           onClick={() => setIsCollapsed(true)}
         />
+      )}
+
+      {/* 오답 노트 상세 팝업 */}
+      {activeQuiz && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setActiveQuiz(null)} />
+          <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-border bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent">
+              <div className="flex items-start justify-between">
+                <div>
+                  <span className="text-[9px] font-bold text-amber-600 bg-amber-500/15 px-2 py-0.5 rounded-full">{activeQuiz.nodeLabel}</span>
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    {new Date(activeQuiz.timestamp).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+                <button onClick={() => setActiveQuiz(null)} className="p-1 text-muted-foreground hover:text-foreground rounded">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm font-semibold text-foreground leading-relaxed">{activeQuiz.question}</p>
+
+              <div className="space-y-2">
+                {activeQuiz.options.map((opt, idx) => {
+                  const letter = String.fromCharCode(65 + idx)
+                  const isCorrect = idx === activeQuiz.correctAnswer
+                  const isSelected = idx === activeQuiz.selectedAnswer
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "flex items-start gap-2.5 px-3 py-2.5 rounded-xl border-2 text-sm transition-colors",
+                        isCorrect && "border-green-500/50 bg-green-50 dark:bg-green-950/20",
+                        isSelected && !isCorrect && "border-red-500/50 bg-red-50 dark:bg-red-950/20",
+                        !isCorrect && !isSelected && "border-border bg-muted/20"
+                      )}
+                    >
+                      <span className={cn(
+                        "w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0",
+                        isCorrect && "bg-green-500 text-white",
+                        isSelected && !isCorrect && "bg-red-500 text-white",
+                        !isCorrect && !isSelected && "bg-muted text-muted-foreground"
+                      )}>
+                        {letter}
+                      </span>
+                      <span className="flex-1 text-foreground">{opt}</span>
+                      {isCorrect && <span className="text-[9px] font-bold text-green-600 shrink-0">정답</span>}
+                      {isSelected && !isCorrect && <span className="text-[9px] font-bold text-red-500 shrink-0">내 선택</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="px-6 py-3 border-t border-border bg-muted/20">
+              <button
+                onClick={() => setActiveQuiz(null)}
+                className="w-full h-9 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )

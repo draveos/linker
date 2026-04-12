@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import {
   Plus, BrainCircuit, BookOpen, ChevronRight, Trash2, BarChart2,
   Clock, LogOut, Sparkles, Send, RotateCcw, AlertTriangle,
-  X, FileText, Network, GraduationCap, ArrowRight, Bell, Lock, Bookmark, Archive, Mail, Lightbulb, Target, Flame,
+  X, FileText, Network, GraduationCap, ArrowRight, Bell, Lock, Bookmark, Archive, Mail, Lightbulb, Target, Flame, FileDown,
   Grid3x3, TrendingUp, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain,
   type LucideIcon,
 } from "lucide-react"
@@ -421,6 +421,8 @@ export default function HomePage() {
   const [activeNotif, setActiveNotif] = useState<Notification | null>(null)
   const [incomingToast, setIncomingToast] = useState<Notification | null>(null)
   const [bellPulse, setBellPulse] = useState(false)
+  const [reportText, setReportText] = useState<string | null>(null)
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const initialNotifRef = useRef(true)
   const lastNotifIdRef = useRef<string | null>(null)
 
@@ -490,11 +492,8 @@ export default function HomePage() {
   const unreadCount = notifications.filter((n) => !n.read).length
 
   const toggleNotifPanel = () => {
-    if (!showNotifPanel && unreadCount > 0) {
-      markAllNotificationsRead()
-    }
     setShowNotifPanel((v) => !v)
-    refresh()
+    if (!showNotifPanel) refresh()   // 열 때만 갱신
   }
 
   const handleDeleteNotif = (id: string) => {
@@ -522,6 +521,40 @@ export default function HomePage() {
   const totalAnalyses = graphs.reduce((s, g) => s + g.analysisCount, 0)
   const continueGraph = recentlyViewed[0] ?? graphs[0] ?? null
   const insights: LearningInsights | null = continueGraph ? getLearningInsights(continueGraph) : null
+
+  const handleGenerateReport = async () => {
+    if (!continueGraph || isGeneratingReport) return
+    setIsGeneratingReport(true)
+    setReportText(null)
+    const ins = insights
+    const msg = `학습 상태를 분석해주세요.\n\n그래프: ${continueGraph.domain}\n숙련도: ${ins?.masteryPct ?? 0}%\n분석 횟수: ${ins?.totalAnalyses ?? 0}회\n총 개념: ${continueGraph.nodes.length}개\n마스터된 개념: ${continueGraph.masteredNodeIds.length}개 (${continueGraph.masteredNodeIds.map(id => continueGraph.nodes.find(n => n.id === id)?.label).filter(Boolean).join(", ")})\n자주 막히는 개념: ${ins?.topWeaknesses.map(w => `${w.concept}(${w.count}회)`).join(", ") || "없음"}\n다음 추천: ${ins?.frontierNode?.label ?? "없음"}`
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: msg }],
+          domain: continueGraph.domain,
+          nodes: continueGraph.nodes.map(n => ({ label: n.label, description: n.description })),
+          mode: "report",
+        }),
+      })
+      if (!res.ok || !res.body) throw new Error()
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let text = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+        setReportText(text)
+      }
+    } catch {
+      setReportText("리포트 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
+    } finally {
+      setIsGeneratingReport(false)
+    }
+  }
 
   const handleOpenFrontier = () => {
     if (!insights?.frontierNode || !continueGraph) return
@@ -582,9 +615,11 @@ export default function HomePage() {
             </button>
             <button
               onClick={() => {
-                setUserRole("teacher")
-                setFading(true)
-                setTimeout(() => router.push("/teacher"), 300)
+                if (confirm("교수 모드로 전환합니다. 교수 대시보드로 이동합니다.")) {
+                  setUserRole("teacher")
+                  setFading(true)
+                  setTimeout(() => router.push("/teacher"), 300)
+                }
               }}
               className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors px-2.5 py-1.5 rounded-lg hover:bg-primary/5"
               title="교수 모드로 전환"
@@ -654,6 +689,7 @@ export default function HomePage() {
                               : n.kind === "retire" ? Archive
                               : n.kind === "message" ? Mail
                               : Bell
+                            const isFeedback = n.kind === "message"
                             return (
                               <div
                                 key={n.id}
@@ -661,13 +697,18 @@ export default function HomePage() {
                                 tabIndex={0}
                                 onClick={() => { setActiveNotif(n); setShowNotifPanel(false) }}
                                 onKeyDown={(e) => { if (e.key === "Enter") { setActiveNotif(n); setShowNotifPanel(false) } }}
-                                className="w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex items-start gap-3 group cursor-pointer"
+                                className={cn(
+                                  "w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex items-start gap-3 group cursor-pointer",
+                                  isFeedback && "bg-violet-500/[0.03] border-l-2 border-l-violet-500/50"
+                                )}
                               >
                                 <div className={cn(
                                   "p-1.5 rounded-lg shrink-0 border",
-                                  n.kind === "retire"
-                                    ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
-                                    : "bg-primary/10 border-primary/20 text-primary"
+                                  isFeedback
+                                    ? "bg-violet-500/10 border-violet-500/30 text-violet-600"
+                                    : n.kind === "retire"
+                                      ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
+                                      : "bg-primary/10 border-primary/20 text-primary"
                                 )}>
                                   <NotifIcon className="h-3 w-3" />
                                 </div>
@@ -813,6 +854,14 @@ export default function HomePage() {
               <Lightbulb className="h-4 w-4 text-amber-500" />
               <h2 className="text-xl font-bold text-foreground">내 학습 인사이트</h2>
               <span className="text-xs text-muted-foreground ml-1">{continueGraph.domain}</span>
+              <button
+                onClick={handleGenerateReport}
+                disabled={isGeneratingReport}
+                className="ml-auto flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                {isGeneratingReport ? "생성 중..." : "AI 학습 리포트"}
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1040,12 +1089,19 @@ export default function HomePage() {
                       <h3 className="font-bold text-lg text-foreground leading-tight group-hover:text-primary transition-colors">
                         {graph.domain}
                       </h3>
-                      {isInstitutional && graph.instructorName && (
-                        <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                          <GraduationCap className="h-2.5 w-2.5" />
-                          {graph.instructorName} · {graph.institution}
-                        </p>
-                      )}
+                      <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                        {isInstitutional && graph.instructorName ? (
+                          <>
+                            <GraduationCap className="h-2.5 w-2.5" />
+                            {graph.instructorName} · {graph.institution}
+                          </>
+                        ) : (
+                          <>
+                            <Network className="h-2.5 w-2.5" />
+                            지식 그래프
+                          </>
+                        )}
+                      </p>
                     </div>
 
                     <div className="space-y-1">
@@ -1150,6 +1206,57 @@ export default function HomePage() {
         />
       )}
 
+      {/* AI 학습 리포트 모달 */}
+      {reportText !== null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setReportText(null)} />
+          <div className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
+            <div className="px-6 py-5 border-b border-border bg-gradient-to-br from-primary/10 via-primary/5 to-transparent shrink-0">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">AI LEARNING REPORT</p>
+                  <h3 className="text-lg font-bold text-foreground">학습 종합 리포트</h3>
+                  {continueGraph && (
+                    <p className="text-[11px] text-muted-foreground mt-1">{continueGraph.domain} · {insights?.masteryPct ?? 0}% 숙련도</p>
+                  )}
+                </div>
+                <button onClick={() => setReportText(null)} className="p-1 text-muted-foreground hover:text-foreground rounded">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto px-6 py-5">
+              {isGeneratingReport && (
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                  <span className="text-xs text-muted-foreground">AI가 분석 중입니다...</span>
+                </div>
+              )}
+              <div className="text-sm text-foreground leading-relaxed whitespace-pre-line">
+                {reportText}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-border bg-muted/20 shrink-0 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (reportText) navigator.clipboard.writeText(reportText)
+                }}
+                className="flex-1 h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors flex items-center justify-center gap-1.5"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                복사
+              </button>
+              <button
+                onClick={() => setReportText(null)}
+                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Incoming notification toast (live arrival via storage event) */}
       {incomingToast && (
         <button
@@ -1250,9 +1357,26 @@ export default function HomePage() {
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/20 flex items-center gap-2">
+              {activeNotif.graphId && (
+                <button
+                  onClick={() => {
+                    setActiveGraphId(activeNotif.graphId!)
+                    setActiveNotif(null)
+                    setFading(true)
+                    setTimeout(() => router.push("/learn"), 300)
+                  }}
+                  className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  그래프로 이동
+                </button>
+              )}
               <button
                 onClick={() => setActiveNotif(null)}
-                className="flex-1 h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                className={cn(
+                  "h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors",
+                  activeNotif.graphId ? "px-4" : "flex-1"
+                )}
               >
                 닫기
               </button>

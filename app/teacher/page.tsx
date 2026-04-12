@@ -6,11 +6,12 @@ import {
   BrainCircuit, Users, BarChart2, Sparkles, LogOut, GraduationCap, User,
   ChevronRight, TrendingUp, AlertTriangle, Clock, BookOpen, ArrowRight,
   Grid3x3, GitBranch, BarChart3, Atom, FlaskConical, Dna, Cpu, Terminal, Database, Brain, Network,
-  Plus, Info, X, RotateCcw,
+  Plus, Info, X, RotateCcw, Eye, Pencil, Send, Link2, Copy, Check,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { setUserRole, createGraph, createUserClass, deleteUserClass, resetDemoState } from "@/lib/graph-store"
+import { setUserRole, createGraph, createUserClass, deleteUserClass, resetDemoState, setActiveGraphId } from "@/lib/graph-store"
+import type { KnowledgeNode } from "@/components/knowledge-graph-canvas"
 import { MOCK_CLASSES, TEACHER_INFO, getAllClassesView, type MockClass } from "@/lib/mock-classes"
 import type { GenerateGraphResponse } from "@/app/api/generate-graph/route"
 
@@ -216,9 +217,15 @@ export default function TeacherDashboard() {
     refreshClasses(false)
   }
 
-  const handleClassCreated = () => {
+  const handleClassCreated = (editGraphId?: string) => {
     refreshClasses(demoMode)
     setShowCreateModal(false)
+    // "수정 후 배포" 선택 시 → learn 페이지로 이동 (그래프 수정)
+    if (editGraphId) {
+      setActiveGraphId(editGraphId)
+      setFading(true)
+      setTimeout(() => router.push("/learn"), 300)
+    }
   }
 
   const handleResetDemo = () => {
@@ -258,6 +265,7 @@ export default function TeacherDashboard() {
   }
 
   const handleSwitchToStudent = () => {
+    if (!confirm("학생 모드로 전환합니다. 학생 홈으로 이동합니다.")) return
     setUserRole("student")
     setFading(true)
     setTimeout(() => router.push("/home"), 300)
@@ -544,6 +552,7 @@ export default function TeacherDashboard() {
         <CreateClassModal
           onClose={() => setShowCreateModal(false)}
           onCreated={handleClassCreated}
+          onEditAndDeploy={(graphId) => handleClassCreated(graphId)}
         />
       )}
 
@@ -631,29 +640,44 @@ export default function TeacherDashboard() {
   )
 }
 
-// ── Create Class Modal — 교수가 직접 그래프를 만들고 학급에 연결 ──
+// ── Create Class Modal — 3단계: 입력 → AI 생성 → 프리뷰 → 배포 ──
+
+function generateClassCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase()
+}
 
 function CreateClassModal({
   onClose,
   onCreated,
+  onEditAndDeploy,
 }: {
   onClose: () => void
   onCreated: () => void
+  onEditAndDeploy: (graphId: string) => void
 }) {
+  // Step 1: 입력
   const [name, setName] = useState("")
   const [domain, setDomain] = useState("")
   const [lectureText, setLectureText] = useState("")
+
+  // Step 2: 생성 중
   const [isGenerating, setIsGenerating] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [error, setError] = useState("")
   const progressRef = useRef<NodeJS.Timeout | undefined>(undefined)
 
-  const handleSubmit = async () => {
+  // Step 3: 프리뷰
+  const [previewNodes, setPreviewNodes] = useState<KnowledgeNode[] | null>(null)
+  const [previewDomain, setPreviewDomain] = useState("")
+  const [copied, setCopied] = useState(false)
+
+  const [error, setError] = useState("")
+
+  const handleGenerate = async () => {
     setError("")
     if (!name.trim()) { setError("학급 이름을 입력하세요."); return }
     if (!domain.trim()) { setError("도메인 / 과목명을 입력하세요."); return }
     if (lectureText.trim().length < 30) {
-      setError("강의 내용을 30자 이상 입력하세요. AI가 그래프를 생성하기 위한 최소 컨텍스트가 필요합니다.")
+      setError("강의 내용을 30자 이상 입력하세요.")
       return
     }
 
@@ -679,22 +703,10 @@ function CreateClassModal({
       const result: GenerateGraphResponse = await res.json()
       clearInterval(progressRef.current)
       setProgress(100)
-      await new Promise((r) => setTimeout(r, 350))
-
-      // 1) 기관 발급 그래프로 저장 (학생 입장에선 institution 배지 + lock)
-      const graph = createGraph(result.domain, result.nodes, {
-        institution: TEACHER_INFO.affiliation,
-        instructorName: TEACHER_INFO.name,
-      })
-
-      // 2) 학급 생성 + 그래프 연결
-      createUserClass({
-        name: name.trim(),
-        subject: domain.trim(),
-        linkedGraphId: graph.id,
-      })
-
-      onCreated()
+      await new Promise((r) => setTimeout(r, 300))
+      setPreviewNodes(result.nodes)
+      setPreviewDomain(result.domain)
+      setIsGenerating(false)
     } catch (err) {
       clearInterval(progressRef.current)
       setIsGenerating(false)
@@ -703,32 +715,89 @@ function CreateClassModal({
     }
   }
 
+  const handleDeploy = () => {
+    if (!previewNodes) return
+    const graph = createGraph(previewDomain, previewNodes, {
+      institution: TEACHER_INFO.affiliation,
+      instructorName: TEACHER_INFO.name,
+    })
+    createUserClass({
+      name: name.trim(),
+      subject: domain.trim(),
+      linkedGraphId: graph.id,
+    })
+    onCreated()
+  }
+
+  const handleEditThenDeploy = () => {
+    if (!previewNodes) return
+    const graph = createGraph(previewDomain, previewNodes, {
+      institution: TEACHER_INFO.affiliation,
+      instructorName: TEACHER_INFO.name,
+    })
+    createUserClass({
+      name: name.trim(),
+      subject: domain.trim(),
+      linkedGraphId: graph.id,
+    })
+    onEditAndDeploy(graph.id)
+  }
+
+  const inviteCode = name.trim() ? generateClassCode() : ""
+  const inviteUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/join/${inviteCode}`
+    : ""
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(inviteUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // ── Step indicator ──
+  const step = previewNodes ? 3 : isGenerating ? 2 : 1
+  const stepLabels = ["정보 입력", "AI 생성", "프리뷰"]
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={isGenerating ? undefined : onClose} />
-      <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-border bg-gradient-to-br from-primary/10 via-primary/5 to-transparent">
-          <div className="flex items-start justify-between">
+      <div className={cn(
+        "relative bg-card border border-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200",
+        previewNodes ? "w-full max-w-lg" : "w-full max-w-md"
+      )}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-border bg-gradient-to-br from-primary/10 via-primary/5 to-transparent">
+          <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">
-                NEW CLASS
-              </p>
+              <p className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1">NEW CLASS</p>
               <h3 className="text-lg font-bold text-foreground">학급 생성</h3>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                강의 내용을 입력하면 AI가 학급용 지식 그래프를 자동 생성합니다
-              </p>
             </div>
-            <button
-              onClick={onClose}
-              disabled={isGenerating}
-              className="p-1 text-muted-foreground hover:text-foreground rounded disabled:opacity-50"
-            >
+            <button onClick={onClose} disabled={isGenerating} className="p-1 text-muted-foreground hover:text-foreground rounded disabled:opacity-50">
               <X className="h-4 w-4" />
             </button>
           </div>
+          {/* Step indicator */}
+          <div className="flex items-center gap-1">
+            {stepLabels.map((label, i) => (
+              <div key={label} className="flex items-center gap-1">
+                {i > 0 && <div className={cn("w-6 h-px", i < step ? "bg-primary" : "bg-border")} />}
+                <div className={cn(
+                  "flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors",
+                  i + 1 === step ? "bg-primary/15 text-primary" : i + 1 < step ? "text-primary/70" : "text-muted-foreground"
+                )}>
+                  <span className={cn(
+                    "w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center",
+                    i + 1 <= step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  )}>{i + 1}</span>
+                  {label}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {isGenerating ? (
+        {/* Step 2: Generating */}
+        {isGenerating && (
           <div className="px-6 py-10 text-center space-y-5">
             <div className="w-14 h-14 rounded-full border-4 border-primary/20 border-t-primary animate-spin mx-auto" />
             <div>
@@ -736,14 +805,102 @@ function CreateClassModal({
               <p className="text-[11px] text-muted-foreground">AI가 강의 내용을 분석하고 개념 트리를 구성하고 있습니다</p>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
+              <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground">{Math.round(progress)}%</p>
           </div>
-        ) : (
+        )}
+
+        {/* Step 3: Preview */}
+        {previewNodes && !isGenerating && (
+          <>
+            <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+              {/* Summary */}
+              <div className="flex items-center gap-3 pb-3 border-b border-border">
+                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+                  <Check className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-foreground">{previewDomain}</p>
+                  <p className="text-[10px] text-muted-foreground">{previewNodes.length}개 개념 노드 생성 완료</p>
+                </div>
+              </div>
+
+              {/* Node list */}
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">생성된 개념 트리</p>
+                <div className="space-y-1.5">
+                  {previewNodes.map((node, i) => (
+                    <div key={node.id} className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-muted/30 border border-border hover:bg-muted/50 transition-colors">
+                      <div className="w-5 h-5 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 mt-0.5">
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-foreground">{node.label}</p>
+                        <p className="text-[10px] text-muted-foreground line-clamp-1">{node.description}</p>
+                        {node.prerequisites.length > 0 && (
+                          <p className="text-[9px] text-muted-foreground/70 mt-0.5">
+                            ← {node.prerequisites.map(pid => previewNodes.find(n => n.id === pid)?.label ?? pid).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Invite link preview */}
+              <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Link2 className="h-3.5 w-3.5 text-primary" />
+                  <p className="text-[10px] font-semibold text-primary uppercase tracking-wider">학생 초대 링크</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[11px] font-mono text-foreground bg-muted border border-border rounded-lg px-3 py-2 truncate">
+                    {inviteUrl}
+                  </code>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 w-8 h-8 rounded-lg border border-border bg-card hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[9px] text-muted-foreground leading-relaxed">
+                  배포 후 학생이 이 링크로 접속하면 그래프가 자동 추가됩니다 (백엔드 도입 시 활성화).
+                </p>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-border bg-muted/20 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setPreviewNodes(null); setProgress(0) }}
+                  className="h-10 px-4 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors flex items-center gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  재생성
+                </button>
+                <button
+                  onClick={handleEditThenDeploy}
+                  className="h-10 px-4 rounded-xl border border-primary/30 text-sm font-medium text-primary hover:bg-primary/5 transition-colors flex items-center gap-1.5"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  수정 후 배포
+                </button>
+                <button
+                  onClick={handleDeploy}
+                  className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  학급 배포
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Step 1: Form */}
+        {!previewNodes && !isGenerating && (
           <>
             <div className="px-6 py-5 space-y-4">
               <div>
@@ -773,13 +930,11 @@ function CreateClassModal({
                 <textarea
                   value={lectureText}
                   onChange={(e) => { setLectureText(e.target.value); setError("") }}
-                  placeholder="이번 학기에 다룰 주요 개념을 설명하세요. 예: 벡터 공간의 정의부터 시작해 선형 변환, 행렬식, 고유값과 고유벡터, 대각화까지 다룹니다. 핵심은 ad-bc 공식과 여인수 전개, 그리고 그것이 역행렬·크래머 공식과 어떻게 연결되는지..."
+                  placeholder="이번 학기에 다룰 주요 개념을 설명하세요..."
                   rows={5}
                   className="w-full px-3.5 py-2.5 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary placeholder:text-muted-foreground/50 resize-none leading-relaxed"
                 />
-                <p className="text-[9px] text-muted-foreground/70 mt-1.5 leading-relaxed">
-                  AI가 이 내용을 분석해 개념 노드와 선행 관계를 자동 추출합니다. 30자 이상 권장.
-                </p>
+                <p className="text-[9px] text-muted-foreground/70 mt-1.5">30자 이상 권장</p>
               </div>
 
               {error && (
@@ -792,25 +947,22 @@ function CreateClassModal({
               <div className="flex items-start gap-2 text-[10px] text-muted-foreground bg-muted/40 border border-border rounded-lg px-3 py-2.5 leading-relaxed">
                 <Info className="h-3 w-3 shrink-0 mt-0.5 text-primary" />
                 <span>
-                  생성된 그래프는 <strong className="text-foreground">{TEACHER_INFO.affiliation}</strong> 발급으로 표시되며,
-                  학생 화면에서 잠금 상태로 노출됩니다. 학생이 분석을 진행하면 학급 약점 분포에 자동 누적됩니다.
+                  생성된 그래프는 <strong className="text-foreground">{TEACHER_INFO.affiliation}</strong> 발급으로 표시됩니다.
+                  배포 전 프리뷰에서 확인·수정할 수 있습니다.
                 </span>
               </div>
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/20 flex items-center gap-2">
-              <button
-                onClick={onClose}
-                className="flex-1 h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
-              >
+              <button onClick={onClose} className="flex-1 h-10 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
                 취소
               </button>
               <button
-                onClick={handleSubmit}
+                onClick={handleGenerate}
                 className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-1.5"
               >
                 <Sparkles className="h-3.5 w-3.5" />
-                AI로 학급 생성
+                AI로 그래프 생성
               </button>
             </div>
           </>
