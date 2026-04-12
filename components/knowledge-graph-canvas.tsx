@@ -67,6 +67,50 @@ export interface SelectedNodeData {
 }
 
 /**
+ * 추천 학습 경로 — mastered 노드에서 출발해 다음에 학습할 수 있는 frontier 노드들을 위상정렬.
+ * 반환: 학습 순서대로 정렬된 노드 ID 배열 + 경로 엣지 (prereq→frontier) 셋.
+ */
+function computeLearningPath(nodes: KnowledgeNode[], masteredIds: string[]): {
+  pathNodeIds: string[]
+  pathEdgeKeys: Set<string>   // "prereqId-nodeId" 형식
+} {
+  const masteredSet = new Set(masteredIds)
+  if (masteredSet.size === 0 || masteredSet.size === nodes.length) return { pathNodeIds: [], pathEdgeKeys: new Set() }
+
+  // frontier: 모든 prereq가 mastered, 본인은 not mastered
+  const frontier = nodes.filter((n) =>
+    !masteredSet.has(n.id) &&
+    n.prerequisites.length > 0 &&
+    n.prerequisites.every((p) => masteredSet.has(p))
+  )
+  if (frontier.length === 0) return { pathNodeIds: [], pathEdgeKeys: new Set() }
+
+  // 그 다음 단계도 포함 — frontier의 children 중 prereqs가 (mastered + frontier)에 모두 포함
+  const frontierSet = new Set(frontier.map((n) => n.id))
+  const extendedSet = new Set(frontierSet)
+  const combined = new Set([...masteredSet, ...frontierSet])
+  nodes.forEach((n) => {
+    if (combined.has(n.id)) return
+    if (n.prerequisites.length > 0 && n.prerequisites.every((p) => combined.has(p))) {
+      extendedSet.add(n.id)
+    }
+  })
+
+  // 경로 엣지: mastered→frontier, frontier→next
+  const pathEdgeKeys = new Set<string>()
+  ;[...frontierSet, ...extendedSet].forEach((nid) => {
+    const node = nodes.find((n) => n.id === nid)
+    node?.prerequisites.forEach((pid) => {
+      if (masteredSet.has(pid) || frontierSet.has(pid)) {
+        pathEdgeKeys.add(`${pid}-${nid}`)
+      }
+    })
+  })
+
+  return { pathNodeIds: [...frontierSet, ...extendedSet].filter((id) => !frontierSet.has(id) ? extendedSet.has(id) : true), pathEdgeKeys }
+}
+
+/**
  * 주어진 root cause 노드의 모든 후속(직간접 descendant) 노드 id 집합을 계산.
  * prerequisites 그래프를 역방향으로 BFS — "이 노드를 prereq로 갖는 노드"를 찾아 확장.
  */
@@ -186,24 +230,29 @@ function resolveNodeType(
 const EDGE_COLOR_DEFAULT  = "#94a3b8"  // slate-400
 const EDGE_COLOR_DANGER   = "#ef4444"  // red-500
 const EDGE_COLOR_AFFECTED = "#fb923c"  // orange-400 — 결손 전파 영향권
+const EDGE_COLOR_LEARNING = "#10b981"  // emerald-500 — 추천 학습 경로
 const EDGE_COLOR_TRAVERSE = "#f59e0b"  // amber-400
 
 function buildEdgeStyle(
     isPathToRootCause: boolean,
     isAffectedSubtree: boolean,
     filterType: string,
-    isAnalyzing?: boolean
+    isAnalyzing?: boolean,
+    isLearningPath?: boolean
 ) {
   const color = isPathToRootCause
     ? EDGE_COLOR_DANGER
     : isAffectedSubtree
       ? EDGE_COLOR_AFFECTED
-      : EDGE_COLOR_DEFAULT
-  const width = isPathToRootCause ? 2.5 : isAffectedSubtree ? 2 : 1.5
+      : isLearningPath
+        ? EDGE_COLOR_LEARNING
+        : EDGE_COLOR_DEFAULT
+  const width = isPathToRootCause ? 2.5 : (isAffectedSubtree || isLearningPath) ? 2 : 1.5
   return {
     style: {
       stroke: color,
       strokeWidth: width,
+      strokeDasharray: isLearningPath ? "6 3" : undefined,
       opacity: filterType !== "all" ? 0.3 : 1,
     },
     animated: !!(isAnalyzing && isPathToRootCause),
@@ -222,7 +271,7 @@ function buildEdgeStyle(
 
 function ConceptNode({ data, selected, id }: NodeProps) {
   const { editMode, onDeleteNode, onRenameNode } = useContext(GraphEditContext)
-  const { label, nodeType, isAnalyzing, isFiltered, confidence } = data
+  const { label, nodeType, isAnalyzing, isFiltered, confidence, isFrontier } = data
   const showAiBadge = confidence !== undefined && confidence < 0.8 && nodeType !== "mastered"
 
   return (
@@ -264,8 +313,10 @@ function ConceptNode({ data, selected, id }: NodeProps) {
                 "px-4 py-3 rounded-xl border-2 shadow-lg transition-all duration-300 min-w-[100px] text-center",
                 nodeType === "mastered" &&
                 "bg-blue-500 text-white border-blue-500 shadow-blue-500/25",
-                nodeType === "standard" &&
+                nodeType === "standard" && !isFrontier &&
                 "bg-card text-card-foreground border-border hover:border-primary/50",
+                nodeType === "standard" && isFrontier &&
+                "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 border-emerald-400 border-dashed shadow-emerald-500/15",
                 nodeType === "missing" &&
                 "bg-destructive/10 text-destructive border-destructive shadow-destructive/30 shadow-xl",
                 nodeType === "missing" && isAnalyzing && "animate-pulse",
@@ -390,7 +441,7 @@ export function KnowledgeGraphCanvas({
                                        onSaveGraph,
                                      }: KnowledgeGraphCanvasProps) {
   const [editMode, setEditMode] = useState(false)
-  const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing" | "affected">("all")
+  const [filterType, setFilterType] = useState<"all" | "mastered" | "standard" | "missing" | "affected" | "frontier">("all")
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmState>({
     type: null,
     id: null,
@@ -456,12 +507,14 @@ export function KnowledgeGraphCanvas({
   const buildNodes = useCallback(
       (kNodes: KnowledgeNode[], mIds: string[], rootCauseId?: string | null, fType = "all"): Node[] => {
         const autoPositions = computeLayout(kNodes)
-        // savedPositions 우선, 없는 노드는 auto-layout으로 fallback
         const positions = { ...autoPositions, ...(savedPositions ?? {}) }
         const affectedSet = computeAffectedDescendants(kNodes, rootCauseId)
+        const { pathNodeIds } = rootCauseId ? { pathNodeIds: [] } : computeLearningPath(kNodes, mIds)
+        const pathNodeSet = new Set(pathNodeIds)
         return kNodes.map((node) => {
           const nodeType = resolveNodeType(node.id, mIds, rootCauseId, affectedSet)
           const isFiltered = fType !== "all" && fType !== nodeType
+          const isFrontier = pathNodeSet.has(node.id)
           return {
             id: node.id,
             type: "concept",
@@ -472,6 +525,7 @@ export function KnowledgeGraphCanvas({
               description: node.description,
               isAnalyzing: !!isAnalyzing && node.id === rootCauseId,
               isFiltered,
+              isFrontier,
               confidence: node.confidence,
               _editMode: false,
             },
@@ -484,26 +538,28 @@ export function KnowledgeGraphCanvas({
   )
 
   const buildEdges = useCallback(
-      (kNodes: KnowledgeNode[], rootCauseId?: string | null, fType = "all"): Edge[] => {
+      (kNodes: KnowledgeNode[], rootCauseId?: string | null, fType = "all", mIds: string[] = []): Edge[] => {
         const nodeIdSet = new Set(kNodes.map((n) => n.id))
         const affectedSet = computeAffectedDescendants(kNodes, rootCauseId)
+        const { pathEdgeKeys } = rootCauseId ? { pathEdgeKeys: new Set<string>() } : computeLearningPath(kNodes, mIds)
         const edges: Edge[] = []
         kNodes.forEach((node) => {
           node.prerequisites.forEach((prereqId) => {
             if (!nodeIdSet.has(prereqId)) return
+            const edgeKey = `${prereqId}-${node.id}`
             const isPath = !!rootCauseId && (node.id === rootCauseId || prereqId === rootCauseId)
-            // 결손 전파 subtree: 양 끝이 (root cause + descendants) 안에 들어 있고, 직접 path는 아님
             const inSubtree =
               !!rootCauseId && !isPath &&
               (prereqId === rootCauseId || affectedSet.has(prereqId)) &&
               affectedSet.has(node.id)
+            const isLearning = pathEdgeKeys.has(edgeKey)
             edges.push({
-              id: `${prereqId}-${node.id}`,
+              id: edgeKey,
               source: prereqId,
               target: node.id,
               type: "deletable",
               data: { _editMode: false },
-              ...buildEdgeStyle(isPath, inSubtree, fType, isAnalyzing),
+              ...buildEdgeStyle(isPath, inSubtree, fType, isAnalyzing, isLearning),
             })
           })
         })
@@ -516,7 +572,7 @@ export function KnowledgeGraphCanvas({
       buildNodes(knowledgeNodes, masteredNodeIds, activeRootCauseId, filterType)
   )
   const [edges, setEdges, onEdgesChange] = useEdgesState(
-      buildEdges(knowledgeNodes, activeRootCauseId, filterType)
+      buildEdges(knowledgeNodes, activeRootCauseId, filterType, masteredNodeIds)
   )
 
   // ── props.nodes 변경 시 전체 재빌드 (그래프 교체) ─────────
@@ -527,7 +583,7 @@ export function KnowledgeGraphCanvas({
     prevNodesRef.current = knowledgeNodes
     if (editMode) return
     setNodes(buildNodes(knowledgeNodes, masteredNodeIds, activeRootCauseId, filterType))
-    setEdges(buildEdges(knowledgeNodes, activeRootCauseId, filterType))
+    setEdges(buildEdges(knowledgeNodes, activeRootCauseId, filterType, masteredNodeIds))
   }, [knowledgeNodes, masteredNodeIds, activeRootCauseId, filterType, editMode, buildNodes, buildEdges, setNodes, setEdges])
 
   // ── 비editMode: 표시 속성만 동기화, 포지션·구조는 유지 ──
@@ -536,6 +592,10 @@ export function KnowledgeGraphCanvas({
     if (editMode) return
 
     const affectedSet = computeAffectedDescendants(knowledgeNodes, activeRootCauseId)
+    const { pathNodeIds, pathEdgeKeys } = activeRootCauseId
+      ? { pathNodeIds: [] as string[], pathEdgeKeys: new Set<string>() }
+      : computeLearningPath(knowledgeNodes, masteredNodeIds)
+    const pathNodeSet = new Set(pathNodeIds)
 
     setNodes((nds) =>
         nds.map((n) => {
@@ -550,6 +610,7 @@ export function KnowledgeGraphCanvas({
               nodeType,
               isAnalyzing: isAnalyzing && n.id === activeRootCauseId,
               isFiltered,
+              isFrontier: pathNodeSet.has(n.id),
             },
           }
         })
@@ -564,9 +625,10 @@ export function KnowledgeGraphCanvas({
               !!activeRootCauseId && !isPath &&
               (e.source === activeRootCauseId || affectedSet.has(e.source)) &&
               affectedSet.has(e.target)
+          const isLearning = pathEdgeKeys.has(e.id)
           return {
             ...e,
-            ...buildEdgeStyle(isPath, inSubtree, filterType, isAnalyzing),
+            ...buildEdgeStyle(isPath, inSubtree, filterType, isAnalyzing, isLearning),
           }
         })
     )
@@ -813,7 +875,7 @@ export function KnowledgeGraphCanvas({
   // ── 필터 토글 ─────────────────────────────────────────────
 
   const toggleFilter = useCallback(
-      (type: "mastered" | "standard" | "missing" | "affected") =>
+      (type: "mastered" | "standard" | "missing" | "affected" | "frontier") =>
           setFilterType((prev) => (prev === type ? "all" : type)),
       []
   )
@@ -1105,6 +1167,7 @@ export function KnowledgeGraphCanvas({
                     { key: "standard", color: "bg-muted-foreground/30 border border-border", label: "학습 필요" },
                     { key: "missing", color: "bg-destructive", label: "결손 개념" },
                     { key: "affected", color: "bg-orange-400", label: "영향 받음" },
+                    { key: "frontier", color: "bg-emerald-400", label: "추천 학습" },
                   ] as const
               ).map(({ key, color, label }) => (
                   <button

@@ -119,10 +119,12 @@ function compactNodes(nodes: GraphNode[]): string {
 // ── JSON 추출 유틸 ─────────────────────────────────────────────
 
 function extractJSON<T>(text: string): T | null {
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return null
+  // 첫 { 에서 마지막 } 까지 추출 (중첩 JSON 지원)
+  const start = text.indexOf("{")
+  const end = text.lastIndexOf("}")
+  if (start === -1 || end === -1 || end <= start) return null
   try {
-    return JSON.parse(match[0]) as T
+    return JSON.parse(text.slice(start, end + 1)) as T
   } catch {
     return null
   }
@@ -188,7 +190,7 @@ JSON만 반환 (다른 텍스트 금지):
     messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
-  const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
+  const raw = msg.content?.[0]?.type === "text" ? msg.content[0].text : ""
   const parsed = extractJSON<LightProposal>(raw)
   if (!parsed) throw new Error("Proposer JSON parse failed")
   return parsed
@@ -244,7 +246,7 @@ JSON만 반환:
     messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
-  const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
+  const raw = msg.content?.[0]?.type === "text" ? msg.content[0].text : ""
   const parsed = extractJSON<VerifyResult>(raw)
   return parsed ?? { agree: true, critique: "" }
 }
@@ -302,7 +304,7 @@ JSON만 반환:
     messages: [{ role: "user", content: buildUserContent(prompt, imageBase64, imageMimeType) }],
   })
 
-  const raw = msg.content[0].type === "text" ? msg.content[0].text : ""
+  const raw = msg.content?.[0]?.type === "text" ? msg.content[0].text : ""
   const parsed = extractJSON<ContentResult>(raw)
   if (!parsed) throw new Error("Content generator JSON parse failed")
   return parsed

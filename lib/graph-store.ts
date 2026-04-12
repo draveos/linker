@@ -672,6 +672,22 @@ export function addNodeComment(input: Omit<NodeComment, "id" | "timestamp">): No
   return comment
 }
 
+export function deleteNodeComment(id: string): void {
+  if (!isClient()) return
+  try {
+    const all = JSON.parse(localStorage.getItem(COMMENT_KEY) ?? "[]") as NodeComment[]
+    localStorage.setItem(COMMENT_KEY, JSON.stringify(all.filter((c) => c.id !== id)))
+  } catch { /* ignore */ }
+}
+
+export function deleteNodeCommentsByNode(graphId: string, nodeId: string): void {
+  if (!isClient()) return
+  try {
+    const all = JSON.parse(localStorage.getItem(COMMENT_KEY) ?? "[]") as NodeComment[]
+    localStorage.setItem(COMMENT_KEY, JSON.stringify(all.filter((c) => !(c.graphId === graphId && c.nodeId === nodeId))))
+  } catch { /* ignore */ }
+}
+
 export function getNodesWithComments(graphId: string): Set<string> {
   const comments = getNodeComments(graphId)
   return new Set(comments.map((c) => c.nodeId))
@@ -768,6 +784,43 @@ export function getNodeQuizStats(graphId: string, nodeId: string): { total: numb
   const attempts = getQuizHistory(graphId).filter((q) => q.nodeId === nodeId)
   const correct = attempts.filter((q) => q.isCorrect).length
   return { total: attempts.length, correct, wrong: attempts.length - correct }
+}
+
+// ── 역할별 숨김 처리 (soft-delete per role) ────────────────────
+// 학생이 알림/코멘트를 지워도 교수측엔 유지, 반대도 마찬가지
+
+const HIDDEN_KEY = "linker_hidden_items"
+
+interface HiddenItems {
+  [itemId: string]: UserRole[]   // 이 아이템을 숨긴 역할 목록
+}
+
+function getHiddenItems(): HiddenItems {
+  if (!isClient()) return {}
+  try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "{}") } catch { return {} }
+}
+
+function saveHiddenItems(items: HiddenItems): void {
+  if (!isClient()) return
+  localStorage.setItem(HIDDEN_KEY, JSON.stringify(items))
+}
+
+export function hideItemForRole(itemId: string, role: UserRole): void {
+  const items = getHiddenItems()
+  const roles = items[itemId] ?? []
+  if (!roles.includes(role)) roles.push(role)
+  items[itemId] = roles
+  saveHiddenItems(items)
+}
+
+export function isItemHiddenForRole(itemId: string, role: UserRole): boolean {
+  const items = getHiddenItems()
+  return (items[itemId] ?? []).includes(role)
+}
+
+export function filterByRole<T extends { id: string }>(items: T[], role: UserRole): T[] {
+  const hidden = getHiddenItems()
+  return items.filter((item) => !(hidden[item.id] ?? []).includes(role))
 }
 
 // ── 데모 전체 리셋 ─────────────────────────────────────────────

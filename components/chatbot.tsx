@@ -1,15 +1,21 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { MessageCircle, X, Send, BookOpen, HelpCircle, ChevronDown, History, AlertTriangle, ImagePlus, Sparkles } from "lucide-react"
+import { MessageCircle, X, Send, BookOpen, HelpCircle, ChevronDown, History, AlertTriangle, ImagePlus, Sparkles, Plus, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { KnowledgeNode } from "@/components/knowledge-graph-canvas"
 import type { ChatMessage } from "@/app/api/chat/route"
 
+export interface SuggestedNode {
+  label: string
+  description: string
+}
+
 interface ChatbotProps {
   graphNodes: KnowledgeNode[]
   graphDomain: string
+  onAddNode?: (node: SuggestedNode) => void
 }
 
 interface ChatLog {
@@ -23,7 +29,7 @@ interface ChatLog {
 const WELCOME: Record<"question" | "quiz" | "recommend", string> = {
   question: "안녕하세요! 그래프에 있는 개념에 대해 뭐든 물어보세요.",
   quiz: "문제풀이 모드입니다. 개념을 연습할 문제를 출제해드릴게요. 준비되셨나요?",
-  recommend: "자료를 기반으로 추가할 개념 노드를 추천해드립니다. 이미지나 텍스트를 보내주세요.",
+  recommend: "노드 추천 모드입니다. 자료(이미지/텍스트)를 첨부하면 바로 분석해서 추천해드리고, 자료가 없으면 몇 가지 질문으로 방향을 잡아드릴게요.",
 }
 
 const MAX_LOGS = 5
@@ -32,7 +38,36 @@ function formatTime(date: Date) {
   return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
 }
 
-export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
+// AI 응답에서 추천 노드 파싱 — 질문 단계는 무시, 확정 추천만 추출
+function parseSuggestedNodes(text: string): SuggestedNode[] {
+  // 질문 단계 감지 — 물음표가 많거나 대화형이면 추천이 아님
+  const questionMarks = (text.match(/\?|？/g) ?? []).length
+  const lines = text.split("\n").filter((l) => l.trim())
+  if (questionMarks >= 2 && lines.length < 6) return []   // 질문 단계
+  if (text.includes("싶으신가요") || text.includes("어떤 분야") || text.includes("알려주세요")) return []
+
+  // 추천 확정 시그널 체크 — 번호 리스트가 2개 이상 있어야 추천으로 판단
+  const numberedLines = lines.filter((l) => /^\d+[\.\)]/.test(l.trim()))
+  if (numberedLines.length < 2) return []
+
+  const nodes: SuggestedNode[] = []
+  const REJECT_PATTERNS = /\?|？|싶으신|할까요|해볼까|드릴까|있나요|인가요|아닌가요|배우고|학습하고/
+
+  for (const line of numberedLines) {
+    const match = line.match(/^\d+[\.\)]\s*([^:：]{2,25})\s*[:：]\s*(.{8,})/)  // 끝 앵커 제거 — 긴 설명 허용
+    if (!match) continue
+    const label = match[1].trim()
+    const desc = match[2].trim()
+    // 질문/대화형 텍스트 제외
+    if (REJECT_PATTERNS.test(label) || REJECT_PATTERNS.test(desc)) continue
+    // 너무 짧거나 긴 라벨 제외
+    if (label.length < 2 || label.length > 25) continue
+    nodes.push({ label, description: desc })
+  }
+  return nodes
+}
+
+export function Chatbot({ graphNodes, graphDomain, onAddNode }: ChatbotProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [mode, setMode] = useState<"question" | "quiz" | "recommend">("question")
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -41,6 +76,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
   const [logs, setLogs] = useState<ChatLog[]>([])
   const [showLogSidebar, setShowLogSidebar] = useState(false)
   const [chatImage, setChatImage] = useState<File | null>(null)
+  const [addedLabels, setAddedLabels] = useState<Set<string>>(new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -189,7 +225,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
         {/* 로그 사이드바 */}
         <div className={cn(
           "bg-card border border-border rounded-2xl shadow-2xl flex flex-col transition-all duration-300 origin-bottom-right overflow-hidden",
-          showLogSidebar ? "w-52 opacity-100" : "w-0 opacity-0 pointer-events-none border-0"
+          showLogSidebar ? "w-56 opacity-100" : "w-0 opacity-0 pointer-events-none border-0"
         )}
           style={{ maxHeight: "480px" }}
         >
@@ -245,8 +281,8 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
         </div>
 
         {/* 채팅 패널 */}
-        <div className="w-80 bg-card border border-border rounded-2xl shadow-2xl flex flex-col"
-          style={{ maxHeight: "480px" }}
+        <div className="w-96 bg-card border border-border rounded-2xl shadow-2xl flex flex-col"
+          style={{ maxHeight: "560px" }}
         >
           {/* 헤더 */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -260,7 +296,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
                 )}
               >
                 <HelpCircle className="h-3 w-3" />
-                질문
+                Q&A
               </button>
               <button
                 onClick={() => handleModeSwitch("quiz")}
@@ -327,22 +363,105 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
               </div>
             </div>
 
-            {messages.map((msg, i) => (
-              <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-                <div className={cn(
-                  "text-xs px-3 py-2 rounded-2xl max-w-[85%] leading-relaxed whitespace-pre-wrap",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                    : "bg-muted text-foreground rounded-tl-sm"
-                )}>
-                  {msg.content}
-                  {/* 스트리밍 커서 */}
-                  {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
-                    <span className="inline-block w-0.5 h-3 bg-current ml-0.5 animate-pulse align-middle" />
+            {messages.map((msg, i) => {
+              // recommend 모드에서 assistant 응답 → 노드 파싱
+              const isLastAssistant = msg.role === "assistant" && !isStreaming && i === messages.length - 1
+              const suggested = (mode === "recommend" && isLastAssistant && msg.content.length > 20)
+                ? parseSuggestedNodes(msg.content)
+                : []
+
+              return (
+                <div key={i}>
+                  <div className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                    <div className={cn(
+                      "text-xs px-3 py-2 rounded-2xl max-w-[85%] leading-relaxed whitespace-pre-wrap",
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-tr-sm"
+                        : "bg-muted text-foreground rounded-tl-sm"
+                    )}>
+                      {msg.content}
+                      {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
+                        <span className="inline-block w-0.5 h-3 bg-current ml-0.5 animate-pulse align-middle" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 추천 노드 카드 — 점선 테두리 애니메이션 */}
+                  {suggested.length > 0 && onAddNode && (
+                    <div className="mt-2 space-y-1.5 pl-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[9px] font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                          <Sparkles className="h-2.5 w-2.5" />
+                          추천 노드 ({suggested.length})
+                        </p>
+                        {(() => {
+                          const addable = suggested.filter((sn) => !graphNodes.some((n) => n.label === sn.label) && !addedLabels.has(sn.label))
+                          if (addable.length < 2) return null
+                          return (
+                            <button
+                              onClick={() => {
+                                addable.forEach((sn) => onAddNode(sn))
+                                setAddedLabels((prev) => {
+                                  const next = new Set(prev)
+                                  addable.forEach((sn) => next.add(sn.label))
+                                  return next
+                                })
+                              }}
+                              className="text-[9px] font-bold text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+                            >
+                              <Plus className="h-2.5 w-2.5" />
+                              전체 추가 ({addable.length})
+                            </button>
+                          )
+                        })()}
+                      </div>
+                      {suggested.map((sn, j) => {
+                        const alreadyExists = graphNodes.some((n) => n.label === sn.label)
+                        const justAdded = addedLabels.has(sn.label)
+                        return (
+                          <button
+                            key={j}
+                            disabled={alreadyExists || justAdded}
+                            onClick={() => {
+                              onAddNode(sn)
+                              setAddedLabels((prev) => new Set(prev).add(sn.label))
+                            }}
+                            className={cn(
+                              "w-full text-left px-3 py-2 rounded-xl text-[11px] transition-all flex items-start gap-2",
+                              alreadyExists
+                                ? "bg-muted/30 border border-border text-muted-foreground opacity-50 cursor-not-allowed"
+                                : justAdded
+                                  ? "bg-emerald-50 dark:bg-emerald-950/20 border-2 border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                                  : "bg-primary/5 border-2 border-dashed border-primary/40 hover:border-primary hover:bg-primary/10 animate-pulse text-foreground"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                              justAdded ? "bg-emerald-500 text-white" : alreadyExists ? "bg-muted text-muted-foreground" : "bg-primary/20 text-primary"
+                            )}>
+                              {justAdded ? <Check className="h-2.5 w-2.5" /> : <Plus className="h-2.5 w-2.5" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold leading-tight">{sn.label}</p>
+                              <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{sn.description}</p>
+                            </div>
+                            {!alreadyExists && !justAdded && (
+                              <span className="text-[8px] text-primary font-bold shrink-0 mt-1">추가</span>
+                            )}
+                            {justAdded && (
+                              <span className="text-[8px] text-emerald-600 font-bold shrink-0 mt-1">추가됨</span>
+                            )}
+                            {alreadyExists && (
+                              <span className="text-[8px] text-muted-foreground shrink-0 mt-1">이미 존재</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* 빈 assistant 버블 로딩 */}
             {isStreaming && messages[messages.length - 1]?.content === "" && (
@@ -363,7 +482,7 @@ export function Chatbot({ graphNodes, graphDomain }: ChatbotProps) {
             {/* 이미지 프리뷰 */}
             {chatImage && (
               <div className="relative rounded-lg border border-primary/30 overflow-hidden">
-                <img src={URL.createObjectURL(chatImage)} alt="" className="w-full max-h-24 object-contain bg-muted/30" />
+                <img src={URL.createObjectURL(chatImage)} alt="" className="w-full max-h-24 object-contain bg-muted/30" onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)} />
                 <button
                   onClick={() => setChatImage(null)}
                   className="absolute top-1 right-1 w-5 h-5 rounded-full bg-card/90 border border-border flex items-center justify-center text-muted-foreground hover:text-destructive"

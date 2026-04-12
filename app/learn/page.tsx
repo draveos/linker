@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { RotateCcw, X, AlertTriangle, Bell, ArrowLeft, GraduationCap } from "lucide-react"
+import { RotateCcw, X, AlertTriangle, Bell, ArrowLeft, GraduationCap, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LeftSidebar, type Analysis } from "@/components/left-sidebar"
 import { KnowledgeGraphCanvas, type SelectedNodeData, type KnowledgeNode } from "@/components/knowledge-graph-canvas"
@@ -24,6 +24,8 @@ import {
   updateErrorLogResult,
   getNotifications,
   getNodeComments,
+  hideItemForRole,
+  filterByRole,
   type SavedGraph,
   type ErrorLog,
   type Notification,
@@ -60,10 +62,14 @@ export default function LearnPage() {
   // 그래프 내 교수 피드백 패널
   const [showFeedbackPanel, setShowFeedbackPanel] = useState(false)
   const [graphComments, setGraphComments] = useState<NodeComment[]>([])
+  const [commentsVersion, setCommentsVersion] = useState(0)
 
+  const currentRole = isTeacherMode ? "teacher" as const : "student" as const
   const refreshComments = useCallback(() => {
-    setGraphComments(getNodeComments(activeGraphId))
-  }, [activeGraphId])
+    const all = getNodeComments(activeGraphId)
+    setGraphComments(filterByRole(all, currentRole))
+    setCommentsVersion((v) => v + 1)
+  }, [activeGraphId, currentRole])
 
   useEffect(() => { refreshComments() }, [refreshComments])
 
@@ -304,7 +310,7 @@ export default function LearnPage() {
             })
           } else if (data.type === "trace") {
             // trace 이벤트는 브라우저 콘솔에도 출력 (디버그용)
-            console.log("[Harness trace]", data.entry)
+            // trace data logged to agentTrace array
           } else if (data.type === "result") {
             result = data as AnalyzeErrorResponse
           } else if (data.type === "error") {
@@ -527,7 +533,7 @@ export default function LearnPage() {
               kind: "message",
               title: "그래프 구조가 업데이트되었습니다",
               body: parts.join(", ") + ". 그래프를 새로고침하면 반영됩니다.",
-              fromName: "김교수",
+              fromName: isTeacherMode ? "김교수" : undefined,
               graphId: activeGraphId,
             })
           }
@@ -635,8 +641,8 @@ export default function LearnPage() {
         {/* 그래프 내 피드백 알림 종 버튼 — legend 아래 배치 */}
         {(() => {
           const feedbackComments = isTeacherMode
-            ? graphComments.filter((c) => c.authorRole === "teacher")
-            : graphComments.filter((c) => c.authorRole === "teacher")
+            ? graphComments   // 교수는 전부 봄 (자기 피드백 + 학생 답변)
+            : graphComments.filter((c) => c.authorRole === "teacher")  // 학생은 교수 피드백만
           if (feedbackComments.length === 0) return null
           return (
             <button
@@ -704,22 +710,49 @@ export default function LearnPage() {
                 ) : (
                   threads.map(([nodeId, msgs]) => {
                     const node = graphNodes.find((n) => n.id === nodeId)
+                    const isDeleted = !node
                     return (
                       <div key={nodeId} className="border-b border-border last:border-0">
-                        {/* 노드 헤더 — 클릭 시 노드 열기 */}
-                        <button
-                          onClick={() => {
-                            if (node) handleNodeClick({ id: node.id, label: node.label, type: "standard", description: node.description })
-                            setShowFeedbackPanel(false)
-                          }}
-                          className="w-full text-left px-4 py-2 bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-2"
-                        >
-                          <span className="text-[9px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                            {node?.label ?? nodeId}
-                          </span>
-                          <span className="text-[9px] text-muted-foreground ml-auto">{msgs.length}개 메시지</span>
-                          <span className="text-[9px] text-primary">열기 →</span>
-                        </button>
+                        {/* 노드 헤더 */}
+                        <div className={cn(
+                          "px-4 py-2 flex items-center gap-2",
+                          isDeleted ? "bg-destructive/5" : "bg-muted/20"
+                        )}>
+                          <div
+                            role="button"
+                            onClick={() => {
+                              if (isDeleted) return
+                              handleNodeClick({ id: node.id, label: node.label, type: "standard", description: node.description })
+                              setShowFeedbackPanel(false)
+                            }}
+                            className={cn(
+                              "flex-1 flex items-center gap-2 cursor-pointer",
+                              !isDeleted && "hover:opacity-80"
+                            )}
+                          >
+                            <span className={cn(
+                              "text-[9px] font-bold px-1.5 py-0.5 rounded",
+                              isDeleted ? "text-destructive bg-destructive/10" : "text-primary bg-primary/10"
+                            )}>
+                              {isDeleted ? `⚠ 삭제된 노드` : node.label}
+                            </span>
+                            <span className="text-[9px] text-muted-foreground">{msgs.length}개</span>
+                            {!isDeleted && <span className="text-[9px] text-primary">열기 →</span>}
+                          </div>
+                          <button
+                            onClick={(ev) => {
+                              ev.stopPropagation()
+                              if (confirm("이 피드백 스레드를 숨기시겠습니까? (상대방에겐 유지됩니다)")) {
+                                msgs.forEach((m) => hideItemForRole(m.id, currentRole))
+                                refreshComments()
+                              }
+                            }}
+                            className="p-1 rounded text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
+                            title="스레드 숨기기"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
 
                         {/* 대화 스레드 */}
                         <div className="px-4 py-2 space-y-1.5">
@@ -727,12 +760,20 @@ export default function LearnPage() {
                             <div
                               key={m.id}
                               className={cn(
-                                "flex gap-2",
+                                "flex gap-1 group/msg",
                                 m.authorRole === "teacher" ? "justify-start" : "justify-end"
                               )}
                             >
+                              {m.authorRole !== "teacher" && (
+                                <button
+                                  onClick={() => { if (confirm("이 메시지를 숨기시겠습니까?")) { hideItemForRole(m.id, currentRole); refreshComments() } }}
+                                  className="p-0.5 text-transparent group-hover/msg:text-destructive/50 hover:!text-destructive transition-colors self-center shrink-0"
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
                               <div className={cn(
-                                "max-w-[85%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed",
+                                "max-w-[80%] px-3 py-1.5 rounded-xl text-[11px] leading-relaxed",
                                 m.authorRole === "teacher"
                                   ? "bg-primary/10 text-foreground rounded-tl-sm"
                                   : "bg-muted text-foreground rounded-tr-sm"
@@ -750,6 +791,14 @@ export default function LearnPage() {
                                 </div>
                                 {m.text}
                               </div>
+                              {m.authorRole === "teacher" && (
+                                <button
+                                  onClick={() => { if (confirm("이 메시지를 숨기시겠습니까?")) { hideItemForRole(m.id, currentRole); refreshComments() } }}
+                                  className="p-0.5 text-transparent group-hover/msg:text-destructive/50 hover:!text-destructive transition-colors self-center shrink-0"
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -787,9 +836,28 @@ export default function LearnPage() {
         graphId={activeGraphId}
         isTeacherMode={isTeacherMode}
         teacherName={isTeacherMode ? "김교수" : undefined}
+        commentsVersion={commentsVersion}
       />
 
-      <Chatbot graphNodes={graphNodes} graphDomain={graphDomain} />
+      <Chatbot
+        graphNodes={graphNodes}
+        graphDomain={graphDomain}
+        onAddNode={(sn) => {
+          const newId = `ai-${Date.now()}`
+          const newNode: KnowledgeNode = {
+            id: newId,
+            label: sn.label,
+            description: sn.description,
+            prerequisites: [],
+          }
+          const updatedNodes = [...graphNodes, newNode]
+          setGraphNodes(updatedNodes)
+          // persist
+          const graphs = getAllGraphs()
+          const found = graphs.find((g: SavedGraph) => g.id === activeGraphId)
+          if (found) saveGraph({ ...found, nodes: updatedNodes, masteredNodeIds, domain: graphDomain })
+        }}
+      />
 
       {/* 그래프 동기화 notice (교수 수정 시) */}
       {graphSyncToast && (

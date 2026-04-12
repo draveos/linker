@@ -466,6 +466,7 @@ export function LeftSidebar({
                     src={URL.createObjectURL(imageFile)}
                     alt="업로드된 문제"
                     className="w-full max-h-48 object-contain"
+                    onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
                   />
                   <button
                     onClick={() => setImageFile(null)}

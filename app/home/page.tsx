@@ -11,10 +11,10 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  getAllGraphs, moveToTrash, setActiveGraphId, getRecentlyViewed,
+  getAllGraphs, moveToTrash, setActiveGraphId, getRecentlyViewed, getGraph,
   getTrash, restoreFromTrash, emptyTrash, createGraph,
-  setUserRole, isGraphDeletable, getLearningInsights,
-  getNotifications, markAllNotificationsRead, deleteNotification, clearAllNotifications,
+  setUserRole, getUserRole, isGraphDeletable, getLearningInsights,
+  getNotifications, markNotificationRead, hideItemForRole, filterByRole, clearAllNotifications,
   type SavedGraph, type TrashItem, type Notification, type LearningInsights,
 } from "@/lib/graph-store"
 import type { ContextMessage, ValidateContextResponse } from "@/app/api/validate-context/route"
@@ -435,7 +435,7 @@ export default function HomePage() {
     setGraphs(all)
     setRecentlyViewed(getRecentlyViewed(3))
     setTrash(getTrash())
-    setNotifications(getNotifications())
+    setNotifications(filterByRole(getNotifications(), getUserRole()))
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
@@ -497,7 +497,7 @@ export default function HomePage() {
   }
 
   const handleDeleteNotif = (id: string) => {
-    deleteNotification(id)
+    hideItemForRole(id, getUserRole())
     refresh()
   }
 
@@ -695,15 +695,15 @@ export default function HomePage() {
                                 key={n.id}
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => { setActiveNotif(n); setShowNotifPanel(false) }}
-                                onKeyDown={(e) => { if (e.key === "Enter") { setActiveNotif(n); setShowNotifPanel(false) } }}
+                                onClick={() => { if (!n.read) { markNotificationRead(n.id); refresh() } setActiveNotif(n); setShowNotifPanel(false) }}
+                                onKeyDown={(e) => { if (e.key === "Enter") { if (!n.read) { markNotificationRead(n.id); refresh() } setActiveNotif(n); setShowNotifPanel(false) } }}
                                 className={cn(
                                   "w-full text-left px-4 py-3 hover:bg-muted/40 transition-colors flex items-start gap-3 group cursor-pointer",
                                   isFeedback && "bg-violet-500/[0.03] border-l-2 border-l-violet-500/50"
                                 )}
                               >
                                 <div className={cn(
-                                  "p-1.5 rounded-lg shrink-0 border",
+                                  "p-1.5 rounded-lg shrink-0 border relative",
                                   isFeedback
                                     ? "bg-violet-500/10 border-violet-500/30 text-violet-600"
                                     : n.kind === "retire"
@@ -711,6 +711,7 @@ export default function HomePage() {
                                       : "bg-primary/10 border-primary/20 text-primary"
                                 )}>
                                   <NotifIcon className="h-3 w-3" />
+                                  {!n.read && <div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500" />}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-0.5">
@@ -1357,20 +1358,28 @@ export default function HomePage() {
             </div>
 
             <div className="px-6 py-4 border-t border-border bg-muted/20 flex items-center gap-2">
-              {activeNotif.graphId && (
-                <button
-                  onClick={() => {
-                    setActiveGraphId(activeNotif.graphId!)
-                    setActiveNotif(null)
-                    setFading(true)
-                    setTimeout(() => router.push("/learn"), 300)
-                  }}
-                  className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-1.5"
-                >
-                  <ArrowRight className="h-3.5 w-3.5" />
-                  그래프로 이동
-                </button>
-              )}
+              {activeNotif.graphId && (() => {
+                const graphExists = !!getGraph(activeNotif.graphId!)
+                return graphExists ? (
+                  <button
+                    onClick={() => {
+                      setActiveGraphId(activeNotif.graphId!)
+                      setActiveNotif(null)
+                      setFading(true)
+                      setTimeout(() => router.push("/learn"), 300)
+                    }}
+                    className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    그래프로 이동
+                  </button>
+                ) : (
+                  <div className="flex-1 h-10 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs font-medium flex items-center justify-center gap-1.5">
+                    <AlertTriangle className="h-3 w-3" />
+                    그래프가 삭제되었습니다
+                  </div>
+                )
+              })()}
               <button
                 onClick={() => setActiveNotif(null)}
                 className={cn(

@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
-import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap, Bot, Shield, RefreshCw, ChevronDown, Lock, Pencil, Save, Video, Link2, Plus, Trash2, ExternalLink, ShieldAlert } from "lucide-react"
+import { X, Lightbulb, Play, BookOpen, ArrowRight, CheckCircle, AlertCircle, Target, GraduationCap, Bot, Shield, RefreshCw, ChevronDown, Lock, Pencil, Save, Video, Link2, Plus, Trash2, ExternalLink, ShieldAlert, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AgentTraceEntry, ExitReason } from "@/app/api/analyze-error/route"
-import { saveQuizAttempt, getNodeQuizStats, getNodeComments, addNodeComment, sendNotification, getCustomQuizzes, addCustomQuiz, type NodeComment, type CustomQuiz } from "@/lib/graph-store"
+import { saveQuizAttempt, getNodeQuizStats, getNodeComments, addNodeComment, hideItemForRole, filterByRole, sendNotification, getCustomQuizzes, addCustomQuiz, getUserRole, type NodeComment, type CustomQuiz } from "@/lib/graph-store"
 
 // ── URL 안전 검증 + YouTube 썸네일 ──
 
@@ -120,6 +120,7 @@ interface RemedyPanelProps {
   graphId?: string           // 퀴즈 기록 저장용
   isTeacherMode?: boolean    // 교수 모드 — 코멘트 작성 가능
   teacherName?: string       // 교수 이름 (코멘트용)
+  commentsVersion?: number   // 외부에서 코멘트 변경 시 갱신 트리거
 }
 
 // 마이크로 러닝 콘텐츠 (기획서: 3분 분량)
@@ -218,7 +219,7 @@ const defaultContent = {
   }
 }
 
-export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, onUpdateNode, graphId, isTeacherMode, teacherName }: RemedyPanelProps) {
+export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, onUpdateNode, graphId, isTeacherMode, teacherName, commentsVersion }: RemedyPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
@@ -243,6 +244,9 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
   const [qOptions, setQOptions] = useState(["", "", "", ""])
   const [qAnswer, setQAnswer] = useState(0)
 
+  // AI 퀴즈 생성
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+
   useEffect(() => {
     setMounted(true)
     return () => setMounted(false)
@@ -261,14 +265,64 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
       setEditAttachments(selectedNode.attachments ?? [])
     }
     if (graphId && selectedNode) {
-      setComments(getNodeComments(graphId, selectedNode.id))
+      const role = isTeacherMode ? "teacher" as const : "student" as const
+      setComments(filterByRole(getNodeComments(graphId, selectedNode.id), role))
       setCustomQuizzes(getCustomQuizzes(graphId, selectedNode.id))
     }
     setShowQuizForm(false)
     setQQuestion("")
     setQOptions(["", "", "", ""])
     setQAnswer(0)
-  }, [selectedNode?.id, graphId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedNode?.id, graphId, commentsVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleGenerateAiQuiz = async () => {
+    if (!graphId || !selectedNode || isGeneratingQuiz) return
+    setIsGeneratingQuiz(true)
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            content: `"${selectedNode.label}" 개념에 대한 확인 퀴즈를 만들어주세요. 반드시 다음 형식으로만 답변하세요:\n문제: (문제 텍스트)\nA. (선택지)\nB. (선택지)\nC. (선택지)\nD. (선택지)\n정답: (A/B/C/D)\n\n개념 설명: ${selectedNode.description}`,
+          }],
+          domain: selectedNode.label,
+          nodes: [],
+          mode: "quiz",
+        }),
+      })
+      if (!res.ok || !res.body) throw new Error()
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let text = ""
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+      }
+      // 파싱: 문제, A-D 선택지, 정답
+      const qMatch = text.match(/문제[:：]\s*([\s\S]+?)(?=\n[A-D])/)
+      const optMatches = [...text.matchAll(/([A-D])[\.\)]\s*(.+)/g)]
+      const ansMatch = text.match(/정답[:：]\s*([A-D])/)
+      if (qMatch && optMatches.length >= 4 && ansMatch) {
+        const question = qMatch[1].trim()
+        const options = optMatches.slice(0, 4).map((m) => m[2].trim())
+        const answerIndex = ansMatch[1].charCodeAt(0) - 65
+        const quiz = addCustomQuiz({
+          graphId,
+          nodeId: selectedNode.id,
+          nodeLabel: selectedNode.label,
+          question,
+          options,
+          answerIndex,
+          createdBy: "AI 자동 생성",
+        })
+        setCustomQuizzes((prev) => [quiz, ...prev])
+      }
+    } catch { /* 실패 시 조용히 */ }
+    finally { setIsGeneratingQuiz(false) }
+  }
 
   const handleCreateQuiz = () => {
     if (!qQuestion.trim() || !graphId || !selectedNode) return
@@ -356,16 +410,18 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
   const content = aiContent
     ? {
         explanation: aiContent.explanation,
-        videoTitle: aiContent.microLearning.title,
+        videoTitle: aiContent.microLearning?.title ?? "",
         videoDuration: "3분",
-        summary: aiContent.microLearning.summary,
+        summary: aiContent.microLearning?.summary ?? "",
         prerequisites: [],
-        microLearningContent: aiContent.microLearning.content,
-        quiz: {
-          question: aiContent.microLearning.quiz.question,
-          options: aiContent.microLearning.quiz.options,
-          answer: aiContent.microLearning.quiz.answerIndex,
-        },
+        microLearningContent: aiContent.microLearning?.content,
+        quiz: aiContent.microLearning?.quiz
+          ? {
+              question: aiContent.microLearning.quiz.question ?? "확인 퀴즈",
+              options: aiContent.microLearning.quiz.options ?? ["A", "B", "C", "D"],
+              answer: aiContent.microLearning.quiz.answerIndex ?? 0,
+            }
+          : staticContent?.quiz ?? { question: "확인 퀴즈", options: ["A", "B", "C", "D"], answer: 0 },
         confidence: aiContent.confidence,
         traversalPath: aiContent.traversalPath,
       }
@@ -378,16 +434,19 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
   const shuffledQuiz = useMemo(() => {
     if (!content) return null
     const q = content.quiz
-    const correctText = q.options[q.answer]
+    if (!q?.options?.length || !q.question) return null
+    const clampedAnswer = Math.max(0, Math.min(q.answer, q.options.length - 1))
+    const correctText = q.options[clampedAnswer]
     const out = [...q.options]
     for (let i = out.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1))
       ;[out[i], out[j]] = [out[j], out[i]]
     }
+    const newIdx = out.indexOf(correctText)
     return {
       question: q.question,
       options: out,
-      answer: out.indexOf(correctText),
+      answer: newIdx >= 0 ? newIdx : 0,   // fallback to 0 if somehow not found
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode?.id, !!aiContent])
@@ -832,13 +891,26 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
                     <div
                       key={c.id}
                       className={cn(
-                        "px-3 py-2 rounded-lg text-xs leading-relaxed",
+                        "px-3 py-2 rounded-lg text-xs leading-relaxed group/comment relative",
                         c.authorRole === "teacher"
                           ? "bg-primary/10 border border-primary/20"
                           : "bg-muted border border-border"
                       )}
                     >
-                      <div className="flex items-center gap-1.5 mb-1">
+                      <button
+                        onClick={() => {
+                          if (confirm("이 피드백을 숨기시겠습니까? (상대방에겐 유지됩니다)")) {
+                            const role = isTeacherMode ? "teacher" as const : "student" as const
+                            hideItemForRole(c.id, role)
+                            setComments((prev) => prev.filter((x) => x.id !== c.id))
+                          }
+                        }}
+                        className="absolute top-1.5 right-1.5 p-0.5 rounded text-transparent group-hover/comment:text-destructive/60 hover:!text-destructive transition-colors"
+                        title="숨기기"
+                      >
+                        <Trash2 className="h-2.5 w-2.5" />
+                      </button>
+                      <div className="flex items-center gap-1.5 mb-1 pr-4">
                         <span className={cn(
                           "text-[9px] font-bold px-1.5 py-0.5 rounded-full",
                           c.authorRole === "teacher"
@@ -942,6 +1014,27 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
               </div>
             )}
           </div>
+
+          {/* AI 퀴즈 자동 생성 버튼 — 커스텀 퀴즈가 없을 때 */}
+          {graphId && customQuizzes.length === 0 && !aiContent && (
+            <button
+              onClick={handleGenerateAiQuiz}
+              disabled={isGeneratingQuiz}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-amber-500/30 text-amber-600 text-xs font-medium hover:bg-amber-500/5 transition-colors disabled:opacity-50"
+            >
+              {isGeneratingQuiz ? (
+                <>
+                  <div className="w-3 h-3 rounded-full border-2 border-amber-500/30 border-t-amber-500 animate-spin" />
+                  퀴즈 생성 중...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  이 개념에 맞는 AI 퀴즈 생성
+                </>
+              )}
+            </button>
+          )}
 
           {/* 교수 제작 퀴즈 목록 (학생에게도 보임) */}
           {customQuizzes.length > 0 && (
