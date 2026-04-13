@@ -77,6 +77,8 @@ export function Chatbot({ graphNodes, graphDomain, onAddNode }: ChatbotProps) {
   const [showLogSidebar, setShowLogSidebar] = useState(false)
   const [chatImage, setChatImage] = useState<File | null>(null)
   const [addedLabels, setAddedLabels] = useState<Set<string>>(new Set())
+  const [showBubble, setShowBubble] = useState(false)
+  const bubbleShownRef = useRef(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -85,6 +87,15 @@ export function Chatbot({ graphNodes, graphDomain, onAddNode }: ChatbotProps) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isStreaming])
+
+  // 처음 그래프 진입 시 말풍선 한 번 표시
+  useEffect(() => {
+    if (bubbleShownRef.current) return
+    bubbleShownRef.current = true
+    const t1 = setTimeout(() => setShowBubble(true), 2000)
+    const t2 = setTimeout(() => setShowBubble(false), 8000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [])
 
   useEffect(() => {
     if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
@@ -206,14 +217,24 @@ export function Chatbot({ graphNodes, graphDomain, onAddNode }: ChatbotProps) {
 
   return (
     <>
-      {/* 플로팅 버튼 */}
+      {/* 플로팅 버튼 + 말풍선 */}
       {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 transition-transform"
-        >
-          <MessageCircle className="h-5 w-5" />
-        </button>
+        <div className="fixed bottom-6 right-6 z-40 flex items-end gap-2">
+          {showBubble && (
+            <div className="animate-in fade-in slide-in-from-right-2 duration-300 bg-card border border-border rounded-2xl rounded-br-sm shadow-xl px-4 py-2.5 max-w-[200px]">
+              <p className="text-xs text-foreground font-medium leading-relaxed">
+                문제 풀이는 저에게 맡겨주세요! 😊
+              </p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">Q&A · 문제풀이 · 노드 추천</p>
+            </div>
+          )}
+          <button
+            onClick={() => { setIsOpen(true); setShowBubble(false) }}
+            className="w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 transition-transform shrink-0"
+          >
+            <MessageCircle className="h-5 w-5" />
+          </button>
+        </div>
       )}
 
       {/* 전체 컨테이너: 로그 사이드바 + 채팅 패널 */}

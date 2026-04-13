@@ -357,9 +357,9 @@ export function LeftSidebar({
             /* ── 오답 분석 탭 ── */
             <div className="p-6 space-y-4">
               <div>
-                <h2 className="text-sm font-semibold text-foreground mb-1">오답 입력</h2>
+                <h2 className="text-sm font-semibold text-foreground mb-1" suppressHydrationWarning>어디서 막혔나요?</h2>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  틀린 문제, 잘못된 풀이 과정, 또는 이해가 안 되는 부분을 입력하세요
+                  틀린 문제, 잘못된 풀이, 이해 안 되는 부분, 또는 궁금한 개념을 입력하세요
                 </p>
               </div>
 
@@ -426,7 +426,7 @@ export function LeftSidebar({
                 <Textarea
                   placeholder={imageFile
                     ? "(선택사항) 이미지에 대한 추가 설명을 입력하세요..."
-                    : "오답 텍스트를 입력하거나, 문제 이미지를 드래그/첨부할 수 있습니다.\n\n예시: 행렬 A = [[1,2],[3,4]]의 역행렬을 구했는데 [[4,-2],[-3,1]]이 나왔습니다..."
+                    : "오답, 풀이 과정, 또는 궁금한 내용을 입력하세요.\n이미지도 드래그/첨부 가능합니다.\n\n예시: 행렬 A = [[1,2],[3,4]]의 역행렬을 구했는데 [[4,-2],[-3,1]]이 나왔습니다..."
                   }
                   className="min-h-[140px] resize-none text-sm bg-background border-border focus:ring-primary placeholder:text-muted-foreground/60"
                   value={inputText}

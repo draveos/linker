@@ -219,6 +219,103 @@ const defaultContent = {
   }
 }
 
+// ── 풀 수 있는 커스텀 퀴즈 카드 ──
+
+function CustomQuizCard({ quiz, isTeacherMode, graphId, nodeId }: { quiz: CustomQuiz; isTeacherMode: boolean; graphId?: string; nodeId: string }) {
+  const [picked, setPicked] = useState<number | null>(null)
+  const [revealed, setRevealed] = useState(false)
+  const [showAnswer, setShowAnswer] = useState(false)  // 교수 정답 보기 토글
+  const answered = picked !== null
+  const isCorrect = picked === quiz.answerIndex
+
+  const handlePick = (idx: number) => {
+    if (answered) return
+    setPicked(idx)
+    setRevealed(true)
+    if (graphId) {
+      saveQuizAttempt({
+        graphId,
+        nodeId,
+        nodeLabel: quiz.nodeLabel,
+        question: quiz.question,
+        options: quiz.options,
+        selectedAnswer: idx,
+        correctAnswer: quiz.answerIndex,
+        isCorrect: idx === quiz.answerIndex,
+      })
+    }
+  }
+
+  if (isTeacherMode) {
+    return (
+      <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
+        <p className="text-xs font-semibold text-foreground">{quiz.question}</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {quiz.options.map((opt, i) => (
+            <div
+              key={i}
+              className={cn(
+                "text-[10px] px-2 py-1.5 rounded-lg border transition-colors",
+                showAnswer && i === quiz.answerIndex
+                  ? "border-green-500/40 bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 font-semibold"
+                  : "border-border bg-muted/20 text-muted-foreground"
+              )}
+            >
+              {String.fromCharCode(65 + i)}. {opt}
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-[9px] text-muted-foreground">출제: {quiz.createdBy}</p>
+          <button
+            onClick={() => setShowAnswer((v) => !v)}
+            className="text-[9px] text-primary hover:underline font-medium"
+          >
+            {showAnswer ? "정답 숨기기" : "정답 보기"}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
+      <p className="text-xs font-semibold text-foreground">{quiz.question}</p>
+      <div className="space-y-1.5">
+        {quiz.options.map((opt, i) => (
+          <button
+            key={i}
+            onClick={() => handlePick(i)}
+            disabled={answered}
+            className={cn(
+              "w-full text-left text-[11px] px-3 py-2 rounded-lg border transition-colors",
+              answered && i === quiz.answerIndex && "border-green-500/50 bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 font-semibold",
+              answered && picked === i && i !== quiz.answerIndex && "border-red-500/50 bg-red-50 dark:bg-red-950/20 text-red-600",
+              !answered && "border-border bg-card hover:bg-primary/5 hover:border-primary/30"
+            )}
+          >
+            <span className="text-muted-foreground mr-1.5">{String.fromCharCode(65 + i)}.</span>
+            {opt}
+          </button>
+        ))}
+      </div>
+      {revealed && (
+        <div className="flex items-center gap-2">
+          <p className={cn("text-[11px] font-medium", isCorrect ? "text-green-600" : "text-red-500")}>
+            {isCorrect ? "정답!" : "오답 — 다시 복습해보세요"}
+          </p>
+          {!isCorrect && (
+            <button onClick={() => { setPicked(null); setRevealed(false) }} className="text-[9px] text-primary hover:underline">
+              재시도
+            </button>
+          )}
+        </div>
+      )}
+      <p className="text-[9px] text-muted-foreground">출제: {quiz.createdBy}</p>
+    </div>
+  )
+}
+
 export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, onUpdateNode, graphId, isTeacherMode, teacherName, commentsVersion }: RemedyPanelProps) {
   const [mounted, setMounted] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
@@ -1015,8 +1112,8 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
             )}
           </div>
 
-          {/* AI 퀴즈 자동 생성 버튼 — 커스텀 퀴즈가 없을 때 */}
-          {graphId && customQuizzes.length === 0 && !aiContent && (
+          {/* AI 퀴즈 자동 생성 버튼 — 학생 + 교수 둘 다 */}
+          {graphId && (
             <button
               onClick={handleGenerateAiQuiz}
               disabled={isGeneratingQuiz}
@@ -1036,33 +1133,15 @@ export function RemedyPanel({ selectedNode, onClose, aiContent, onMarkMastered, 
             </button>
           )}
 
-          {/* 교수 제작 퀴즈 목록 (학생에게도 보임) */}
+          {/* 교수 제작 / AI 생성 퀴즈 목록 — 학생은 풀기, 교수는 정답 보기 */}
           {customQuizzes.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <GraduationCap className="h-3 w-3" />
-                교수 출제 퀴즈 ({customQuizzes.length})
+                {isTeacherMode ? "출제된 퀴즈" : "추가 퀴즈"} ({customQuizzes.length})
               </p>
               {customQuizzes.map((cq) => (
-                <div key={cq.id} className="rounded-xl border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
-                  <p className="text-xs font-semibold text-foreground">{cq.question}</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {cq.options.map((opt, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "text-[10px] px-2 py-1.5 rounded-lg border",
-                          i === cq.answerIndex
-                            ? "border-green-500/40 bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400 font-semibold"
-                            : "border-border bg-muted/20 text-muted-foreground"
-                        )}
-                      >
-                        {String.fromCharCode(65 + i)}. {opt}
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-[9px] text-muted-foreground">출제: {cq.createdBy}</p>
-                </div>
+                <CustomQuizCard key={cq.id} quiz={cq} isTeacherMode={!!isTeacherMode} graphId={graphId} nodeId={selectedNode.id} />
               ))}
             </div>
           )}
