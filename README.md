@@ -34,15 +34,9 @@ Linker는 학생의 오답을 지식 그래프 위에서 역추적해 진짜 막
 
 ## 데모
 
-`public/` 디렉터리에 실제 동작 영상이 포함되어 있습니다.
+배포된 서비스에서 직접 체험하실 수 있습니다: https://project-linker.vercel.app/
 
-| 영상 | 보여주는 것 |
-|---|---|
-| [`hero_thumbnale.mp4`](public/hero_thumbnale.mp4) | 랜딩 페이지 히어로 데모 |
-| [`graph_generation_demo.mp4`](public/graph_generation_demo.mp4) | 강의 텍스트 → Sonnet으로 그래프 자동 생성 |
-| [`analysis_report_demo.mp4`](public/analysis_report_demo.mp4) | 오답 입력 → Multi-Agent 분석 → 근본 원인 + 마이크로 러닝 |
-
-라이브 시연은 `pnpm dev` 실행 후 `http://localhost:3000`에서 가능합니다.
+> 주의: 백엔드 없이 브라우저 내 localStorage만 사용하기 때문에, 사이트를 벗어나거나 캐시를 지우면 데이터가 유지되지 않을 수 있습니다.
 
 ---
 
